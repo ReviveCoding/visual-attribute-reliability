@@ -31,6 +31,9 @@ jobs:
       - name: Compile tracked Python sources
         run: python -m compileall -q scripts tests
 
+      - name: Validate public documentation contracts
+        run: python -B scripts/validate_documentation.py
+
       - name: Run static evidence fixture contracts
         run: |
           mkdir -p artifacts
