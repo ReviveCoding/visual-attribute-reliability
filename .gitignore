@@ -1,0 +1,33 @@
+# Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local backups and temporary files
+*.bak
+*.tmp
+*.temp
+
+# Generated release and analysis artifacts
+dist/
+logs/
+.local-run/
+
+# Model weights and serialized local artifacts
+*.pt
+*.pth
+*.safetensors
+*.joblib
+
+# Extracted helper-package directory, not project source
+Amazon07_fashionpedia_final_confirmation_v2/
+
+# Local dataset, cache, and scratch locations
+data/
+datasets/
+cache/
+models/
+checkpoints/

@@ -1,0 +1,37 @@
+{
+  "schema_version": "fashionpedia_neckline_attribute_v1",
+  "task_name": "fashionpedia_neckline_attribute_verification_v1",
+  "selection_scope": "train_only",
+  "target_category": {
+    "id": 33,
+    "expected_name": "neckline"
+  },
+  "target_attributes": [
+    { "id": 182, "name": "round (neck)" },
+    { "id": 183, "name": "v-neck" },
+    { "id": 185, "name": "oval (neck)" },
+    { "id": 187, "name": "sweetheart (neckline)" },
+    { "id": 189, "name": "boat (neck)" },
+    { "id": 190, "name": "scoop (neck)" },
+    { "id": 200, "name": "straight across (neck)" }
+  ],
+  "sample_rule": {
+    "include_only_target_category": true,
+    "require_exactly_one_target_attribute": true,
+    "require_positive_bbox_area": true,
+    "exclude_zero_target_attribute_instances": true,
+    "exclude_multi_target_attribute_instances": true
+  },
+  "development_split_policy": {
+    "group_key": "image_id",
+    "train_fraction": 0.8,
+    "development_fraction": 0.2,
+    "seed": 20260701
+  },
+  "qualification_thresholds": {
+    "minimum_eligible_instances_per_class": 1200,
+    "minimum_total_eligible_instances": 10000,
+    "maximum_multi_target_rate": 0.05
+  },
+  "claim_boundary": "Train-only task-definition and data-quality audit. No validation annotations, images, model predictions, training, hyperparameter selection, or final metrics are used."
+}

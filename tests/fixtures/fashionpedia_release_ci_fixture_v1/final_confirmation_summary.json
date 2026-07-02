@@ -1,0 +1,32 @@
+{
+  "status": "PASS",
+  "evaluation_scope": "untouched_official_fashionpedia_validation",
+  "selection_scope": "fixed_from_train_only_development_before_validation_access",
+  "data": {
+    "target_category_id": 33,
+    "target_category_name": "neckline",
+    "official_validation_samples": 654,
+    "official_validation_images": 644,
+    "source_train_dev_image_id_overlap_count": 0
+  },
+  "frozen_head": {
+    "selected_development_epoch": 6,
+    "raw_metrics": {
+      "macro_f1": 0.5797703254640079,
+      "top_label_ece": 0.08395556030105743
+    }
+  },
+  "lora": {
+    "selected_development_epoch": 5,
+    "raw_metrics": {
+      "macro_f1": 0.6681089306597886,
+      "top_label_ece": 0.06523039754742146
+    }
+  },
+  "lora_minus_frozen_head": {
+    "raw": {
+      "macro_f1": 0.08833860519578074
+    }
+  },
+  "fixture_boundary": "Static CI fixture only. No model checkpoint, raw Fashionpedia image, annotation, model runtime, inference, training, or validation rescoring is included or executed."
+}

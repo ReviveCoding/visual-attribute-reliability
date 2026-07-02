@@ -1,0 +1,14 @@
+{
+  "schema_version": "fashionpedia_neckline_attribute_v1",
+  "target_category": {
+    "id": 33,
+    "expected_name": "neckline"
+  },
+  "target_attribute_ids": [182, 183, 185, 187, 189, 190, 200],
+  "sample_rule": {
+    "include_only_target_category": true,
+    "require_exactly_one_target_attribute": true,
+    "require_positive_bbox_area": true
+  },
+  "fixture_boundary": "CI fixture only. It is a non-model, non-dataset subset of the frozen release evidence and must not be treated as a replacement for the full local release-evidence bundle."
+}

@@ -1,0 +1,13 @@
+{
+  "status": "PASS",
+  "source_train_rule_reproduction": {
+    "pass": true,
+    "source_train_dev_pairs": 20800
+  },
+  "official_validation": {
+    "source_train_dev_image_id_overlap_count": 0,
+    "eligible_instances": 654,
+    "eligible_images": 644
+  },
+  "fixture_boundary": "Static CI fixture only. This contains no raw Fashionpedia records or image paths."
+}

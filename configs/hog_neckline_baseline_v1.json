@@ -1,0 +1,50 @@
+{
+  "schema_version": "hog_neckline_baseline_v1",
+  "run_role": "classical_shape_baseline",
+  "task_name": "fashionpedia_neckline_attribute_verification_v1",
+  "target_attribute_ids": [182, 183, 185, 187, 189, 190, 200],
+  "target_attribute_names": {
+    "182": "round (neck)",
+    "183": "v-neck",
+    "185": "oval (neck)",
+    "187": "sweetheart (neckline)",
+    "189": "boat (neck)",
+    "190": "scoop (neck)",
+    "200": "straight across (neck)"
+  },
+  "crop": {
+    "padding_fraction": 0.15,
+    "resize_width": 64,
+    "resize_height": 64,
+    "interpolation": "bilinear",
+    "color_mode": "grayscale"
+  },
+  "hog": {
+    "orientations": 9,
+    "pixels_per_cell": [8, 8],
+    "cells_per_block": [2, 2],
+    "block_norm": "L2-Hys"
+  },
+  "classifier": {
+    "family": "LogisticRegression",
+    "solver": "lbfgs",
+    "C": 1.0,
+    "class_weight": "balanced",
+    "max_iter": 1500,
+    "tol": 0.0001,
+    "random_state": 20260701
+  },
+  "evaluation": {
+    "ece_bins": 15,
+    "primary_metric": "macro_f1",
+    "secondary_metrics": [
+      "accuracy",
+      "balanced_accuracy",
+      "weighted_f1",
+      "multiclass_brier",
+      "negative_log_likelihood",
+      "top_2_accuracy"
+    ]
+  },
+  "claim_boundary": "Train-only development baseline. Uses only the fixed v1b group-disjoint train and dev manifests. Does not load official Fashionpedia validation annotations or images, does not perform hyperparameter sweeps, and is not a final external-confirmation claim."
+}

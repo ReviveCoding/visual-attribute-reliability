@@ -1,0 +1,81 @@
+{
+  "schema_version": "siglip2_lora_matched_head_development_v2_bf16",
+  "run_role": "controlled_frozen_head_vs_lora_development",
+  "task_name": "fashionpedia_neckline_attribute_verification_v1",
+  "model": {
+    "model_id": "google/siglip2-base-patch16-224",
+    "processor_mode": "image_only",
+    "use_fast": false,
+    "embedding_dimension": 768
+  },
+  "target_attribute_ids": [182, 183, 185, 187, 189, 190, 200],
+  "target_attribute_names": {
+    "182": "round (neck)",
+    "183": "v-neck",
+    "185": "oval (neck)",
+    "187": "sweetheart (neckline)",
+    "189": "boat (neck)",
+    "190": "scoop (neck)",
+    "200": "straight across (neck)"
+  },
+  "crop": {
+    "padding_fraction": 0.15,
+    "color_mode": "RGB"
+  },
+  "head": {
+    "family": "Linear",
+    "input_dimension": 768,
+    "output_classes": 7,
+    "initialization_seed": 20260701
+  },
+  "lora": {
+    "scope": "vision_encoder_self_attention_only",
+    "rank": 8,
+    "alpha": 16,
+    "dropout": 0.05,
+    "bias": "none",
+    "expected_target_module_count": 48,
+    "expected_adapter_parameter_count": 589824,
+    "excluded_module": "vision_model.head.attention.out_proj"
+  },
+  "training": {
+    "seed": 20260701,
+    "epochs": 6,
+    "physical_batch_size": 8,
+    "gradient_accumulation_steps": 4,
+    "effective_batch_size": 32,
+    "head_learning_rate": 0.0003,
+    "lora_learning_rate": 0.0001,
+    "weight_decay": 0.01,
+    "max_grad_norm": 1.0,
+    "optimizer": "AdamW",
+    "autocast_dtype": "bfloat16",
+    "grad_scaler": false,
+    "loss_dtype": "float32",
+    "class_weighting": "inverse_frequency_balanced",
+    "shuffle_policy": "deterministic_numpy_permutation_per_epoch"
+  },
+  "selection": {
+    "scope": "development_only",
+    "primary_metric": "macro_f1",
+    "tie_break_metric": "negative_log_likelihood",
+    "direction": {
+      "macro_f1": "maximize",
+      "negative_log_likelihood": "minimize"
+    }
+  },
+  "evaluation": {
+    "ece_bins": 15,
+    "metrics": [
+      "accuracy",
+      "balanced_accuracy",
+      "macro_f1",
+      "weighted_f1",
+      "negative_log_likelihood",
+      "multiclass_brier",
+      "top_label_ece",
+      "top_2_accuracy"
+    ]
+  },
+  "claim_boundary": "Train-only controlled development experiment. Both arms use the fixed Fashionpedia v1b group-disjoint train and dev manifests. Official Fashionpedia validation annotations and images are not loaded. Development metrics are not external confirmation results."
+}

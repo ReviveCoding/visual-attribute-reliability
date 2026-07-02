@@ -1,0 +1,33 @@
+{
+  "schema_version": "fashionpedia_ci_fixture_manifest_v1",
+  "fixture_role": "hosted_ci_static_evidence_contract_fixture",
+  "file_count": 4,
+  "files": [
+    {
+      "relative_path": "RELEASE_NOTES.md",
+      "bytes": 1339,
+      "sha256": "b110e16b0469d1f95adfc27f645b1af88b2f393157ad5bfe4439c3beb7561987"
+    },
+    {
+      "relative_path": "fashionpedia_neckline_attribute_v1.json",
+      "bytes": 549,
+      "sha256": "7688eaccdbcb083fbc6f2d02531a1e813e41cc0df00af529691e12ed5fdd3b08"
+    },
+    {
+      "relative_path": "final_confirmation_summary.json",
+      "bytes": 1003,
+      "sha256": "4731688c7cfaff1694d69f79b64623b0a7612e44342516a396deded93a7bc4e0"
+    },
+    {
+      "relative_path": "official_validation_manifest_summary.json",
+      "bytes": 367,
+      "sha256": "74ecc9156eb113ee5fec06de7ae90ea8a3a03d8f14c4f55a7cd01c1e73ff43a7"
+    }
+  ],
+  "full_release_bundle_required_for": [
+    "checkpoint_presence_contract",
+    "source_artifact_hash_contract",
+    "release_file_manifest_hash_contract"
+  ],
+  "claim_boundary": "Tracked static CI fixture only. Not a model release, not a replacement for the local evidence freeze, and not a verification of local checkpoint or full release-file SHA-256 artifacts."
+}
