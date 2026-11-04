@@ -7,8 +7,8 @@ from pathlib import Path
 
 import numpy
 import PIL
-import sklearn
 import skimage
+import sklearn
 
 
 def main() -> None:

@@ -15,10 +15,9 @@ import peft
 import torch
 import torch.nn.functional as F
 import transformers
-from PIL import Image
 from peft import LoraConfig, get_peft_model
+from PIL import Image
 from transformers import AutoImageProcessor, AutoModel
-
 
 ENCODER_SELF_ATTN_PATTERN = re.compile(
     r"^vision_model\.encoder\.layers\.\d+\.self_attn\."
@@ -69,8 +68,7 @@ def crop_from_record(
 
     if width <= 0.0 or height <= 0.0:
         raise ValueError(
-            "Non-positive bbox for annotation_id="
-            f"{record['annotation_id']}"
+            f"Non-positive bbox for annotation_id={record['annotation_id']}"
         )
 
     with Image.open(image_path) as source:
@@ -93,8 +91,7 @@ def crop_from_record(
 
         if right <= left or bottom <= top:
             raise ValueError(
-                "Degenerate crop for annotation_id="
-                f"{record['annotation_id']}"
+                f"Degenerate crop for annotation_id={record['annotation_id']}"
             )
 
         return image.crop((left, top, right, bottom))
@@ -106,10 +103,7 @@ def make_inputs(
     device: torch.device,
     padding_fraction: float,
 ) -> dict[str, torch.Tensor]:
-    crops = [
-        crop_from_record(record, padding_fraction)
-        for record in records
-    ]
+    crops = [crop_from_record(record, padding_fraction) for record in records]
 
     processor_outputs = image_processor(
         images=crops,
@@ -225,10 +219,7 @@ def make_class_weights(
         raise RuntimeError("At least one target class is absent.")
 
     total = float(len(labels))
-    weights = total / (
-        float(class_count)
-        * counts.astype(np.float64)
-    )
+    weights = total / (float(class_count) * counts.astype(np.float64))
 
     return torch.tensor(
         weights,
@@ -313,9 +304,7 @@ def run_one_update(
         )
 
         if not torch.isfinite(raw_loss).item():
-            raise FloatingPointError(
-                f"Non-finite loss in arm={arm_name}"
-            )
+            raise FloatingPointError(f"Non-finite loss in arm={arm_name}")
 
         (raw_loss / float(len(batches))).backward()
         losses.append(float(raw_loss.detach().cpu().item()))
@@ -380,9 +369,7 @@ def main() -> None:
         raise RuntimeError("CUDA is unavailable.")
 
     if not torch.cuda.is_bf16_supported():
-        raise RuntimeError(
-            "This CUDA device does not report bf16 support."
-        )
+        raise RuntimeError("This CUDA device does not report bf16 support.")
 
     config = load_json(config_path)
     audit = load_json(audit_path)
@@ -395,21 +382,14 @@ def main() -> None:
     seed = int(config["training"]["seed"])
     set_seed(seed)
 
-    target_attribute_ids = [
-        int(value)
-        for value in config["target_attribute_ids"]
-    ]
+    target_attribute_ids = [int(value) for value in config["target_attribute_ids"]]
 
     class_index = {
-        attribute_id: index
-        for index, attribute_id in enumerate(target_attribute_ids)
+        attribute_id: index for index, attribute_id in enumerate(target_attribute_ids)
     }
 
     all_labels = np.asarray(
-        [
-            class_index[int(record["attribute_id"])]
-            for record in records
-        ],
+        [class_index[int(record["attribute_id"])] for record in records],
         dtype=np.int64,
     )
 
@@ -419,35 +399,23 @@ def main() -> None:
         device=device,
     )
 
-    physical_batch_size = int(
-        config["training"]["physical_batch_size"]
-    )
+    physical_batch_size = int(config["training"]["physical_batch_size"])
 
-    accumulation_steps = int(
-        config["training"]["gradient_accumulation_steps"]
-    )
+    accumulation_steps = int(config["training"]["gradient_accumulation_steps"])
 
-    probe_sample_count = (
-        physical_batch_size
-        * accumulation_steps
-    )
+    probe_sample_count = physical_batch_size * accumulation_steps
 
     # Matches epoch=1 shuffle policy from the failed trainer.
-    order = np.random.default_rng(
-        seed + 1
-    ).permutation(len(records))[:probe_sample_count]
-
-    probe_records = [
-        records[int(index)]
-        for index in order
+    order = np.random.default_rng(seed + 1).permutation(len(records))[
+        :probe_sample_count
     ]
+
+    probe_records = [records[int(index)] for index in order]
 
     probe_labels = all_labels[order]
 
     batches = [
-        probe_records[
-            index:index + physical_batch_size
-        ]
+        probe_records[index : index + physical_batch_size]
         for index in range(
             0,
             probe_sample_count,
@@ -456,9 +424,7 @@ def main() -> None:
     ]
 
     batch_labels = [
-        probe_labels[
-            index:index + physical_batch_size
-        ]
+        probe_labels[index : index + physical_batch_size]
         for index in range(
             0,
             probe_sample_count,
@@ -466,9 +432,7 @@ def main() -> None:
         )
     ]
 
-    padding_fraction = float(
-        config["crop"]["padding_fraction"]
-    )
+    padding_fraction = float(config["crop"]["padding_fraction"])
 
     image_processor = AutoImageProcessor.from_pretrained(
         args.model_id,
@@ -476,41 +440,30 @@ def main() -> None:
         use_fast=False,
     )
 
-    set_seed(
-        int(config["head"]["initialization_seed"])
-    )
+    set_seed(int(config["head"]["initialization_seed"]))
 
     template_head = torch.nn.Linear(
         int(config["head"]["input_dimension"]),
         int(config["head"]["output_classes"]),
     )
 
-    initial_head_state = copy.deepcopy(
-        template_head.state_dict()
-    )
+    initial_head_state = copy.deepcopy(template_head.state_dict())
 
     del template_head
 
-    raw_targets = audit[
-        "recommended_lora_scope"
-    ]["full_target_module_paths"]
+    raw_targets = audit["recommended_lora_scope"]["full_target_module_paths"]
 
     target_modules = sorted(
         module_name
         for module_name in raw_targets
-        if ENCODER_SELF_ATTN_PATTERN.fullmatch(
-            module_name
-        )
+        if ENCODER_SELF_ATTN_PATTERN.fullmatch(module_name)
     )
 
-    expected_targets = int(
-        config["lora"]["expected_target_module_count"]
-    )
+    expected_targets = int(config["lora"]["expected_target_module_count"])
 
     if len(target_modules) != expected_targets:
         raise RuntimeError(
-            "Unexpected LoRA target count: "
-            f"{len(target_modules)} vs {expected_targets}"
+            f"Unexpected LoRA target count: {len(target_modules)} vs {expected_targets}"
         )
 
     torch.cuda.empty_cache()
@@ -530,9 +483,7 @@ def main() -> None:
         int(config["head"]["output_classes"]),
     ).to(device)
 
-    frozen_head.load_state_dict(
-        copy.deepcopy(initial_head_state)
-    )
+    frozen_head.load_state_dict(copy.deepcopy(initial_head_state))
 
     frozen_optimizer = torch.optim.AdamW(
         frozen_head.parameters(),
@@ -555,9 +506,7 @@ def main() -> None:
     )
 
     frozen_encoder_grad_tensors = sum(
-        1
-        for parameter in frozen_model.parameters()
-        if parameter.grad is not None
+        1 for parameter in frozen_model.parameters() if parameter.grad is not None
     )
 
     del frozen_optimizer
@@ -575,13 +524,8 @@ def main() -> None:
 
     module_map = dict(base_model.named_modules())
 
-    if any(
-        target not in module_map
-        for target in target_modules
-    ):
-        raise RuntimeError(
-            "Audited LoRA target missing from base model."
-        )
+    if any(target not in module_map for target in target_modules):
+        raise RuntimeError("Audited LoRA target missing from base model.")
 
     lora_config = LoraConfig(
         r=int(config["lora"]["rank"]),
@@ -604,35 +548,23 @@ def main() -> None:
         int(config["head"]["output_classes"]),
     ).to(device)
 
-    lora_head.load_state_dict(
-        copy.deepcopy(initial_head_state)
-    )
+    lora_head.load_state_dict(copy.deepcopy(initial_head_state))
 
     adapter_parameters = [
-        parameter
-        for parameter in lora_model.parameters()
-        if parameter.requires_grad
+        parameter for parameter in lora_model.parameters() if parameter.requires_grad
     ]
 
     lora_optimizer = torch.optim.AdamW(
         [
             {
                 "params": adapter_parameters,
-                "lr": float(
-                    config["training"]["lora_learning_rate"]
-                ),
-                "weight_decay": float(
-                    config["training"]["weight_decay"]
-                ),
+                "lr": float(config["training"]["lora_learning_rate"]),
+                "weight_decay": float(config["training"]["weight_decay"]),
             },
             {
                 "params": lora_head.parameters(),
-                "lr": float(
-                    config["training"]["head_learning_rate"]
-                ),
-                "weight_decay": float(
-                    config["training"]["weight_decay"]
-                ),
+                "lr": float(config["training"]["head_learning_rate"]),
+                "weight_decay": float(config["training"]["weight_decay"]),
             },
         ]
     )
@@ -658,66 +590,43 @@ def main() -> None:
     unexpected_base_trainables = [
         name
         for name, parameter in lora_model.named_parameters()
-        if parameter.requires_grad
-        and ".lora_A." not in name
-        and ".lora_B." not in name
+        if parameter.requires_grad and ".lora_A." not in name and ".lora_B." not in name
     ]
 
     torch.cuda.synchronize(device)
 
     expected_adapter_parameters = int(
-        config["lora"][
-            "expected_adapter_parameter_count"
-        ]
+        config["lora"]["expected_adapter_parameter_count"]
     )
 
     checks = {
         "cuda_available": bool(torch.cuda.is_available()),
-        "bf16_supported": bool(
-            torch.cuda.is_bf16_supported()
-        ),
-        "selected_lora_targets_match": (
-            len(target_modules) == expected_targets
-        ),
+        "bf16_supported": bool(torch.cuda.is_bf16_supported()),
+        "selected_lora_targets_match": (len(target_modules) == expected_targets),
         "adapter_parameter_count_matches": (
-            adapter_parameter_count
-            == expected_adapter_parameters
+            adapter_parameter_count == expected_adapter_parameters
         ),
         "frozen_gradients_finite_and_present": (
-            frozen_result["gradients"][
-                "all_finite_and_present"
-            ]
+            frozen_result["gradients"]["all_finite_and_present"]
         ),
         "frozen_optimizer_update_observed": (
-            frozen_result["optimizer_update"][
-                "optimizer_update_observed"
-            ]
+            frozen_result["optimizer_update"]["optimizer_update_observed"]
         ),
-        "frozen_encoder_has_no_grads": (
-            frozen_encoder_grad_tensors == 0
-        ),
+        "frozen_encoder_has_no_grads": (frozen_encoder_grad_tensors == 0),
         "lora_gradients_finite_and_present": (
-            lora_result["gradients"][
-                "all_finite_and_present"
-            ]
+            lora_result["gradients"]["all_finite_and_present"]
         ),
         "lora_optimizer_update_observed": (
-            lora_result["optimizer_update"][
-                "optimizer_update_observed"
-            ]
+            lora_result["optimizer_update"]["optimizer_update_observed"]
         ),
-        "no_unexpected_base_trainables": (
-            len(unexpected_base_trainables) == 0
-        ),
+        "no_unexpected_base_trainables": (len(unexpected_base_trainables) == 0),
     }
 
     status = "PASS" if all(checks.values()) else "REVIEW"
 
     payload = {
         "status": status,
-        "schema_version": (
-            "siglip2_bf16_one_update_preflight_v1"
-        ),
+        "schema_version": ("siglip2_bf16_one_update_preflight_v1"),
         "precision_policy": {
             "autocast_dtype": "bfloat16",
             "grad_scaler_used": False,
@@ -736,12 +645,9 @@ def main() -> None:
             "peft": peft.__version__,
             "device": str(device),
             "gpu_name": torch.cuda.get_device_name(0),
-            "bf16_supported": bool(
-                torch.cuda.is_bf16_supported()
-            ),
+            "bf16_supported": bool(torch.cuda.is_bf16_supported()),
             "peak_gpu_memory_mib": round(
-                torch.cuda.max_memory_allocated(device)
-                / (1024 ** 2),
+                torch.cuda.max_memory_allocated(device) / (1024**2),
                 2,
             ),
         },
@@ -749,24 +655,17 @@ def main() -> None:
             "physical_batch_size": physical_batch_size,
             "gradient_accumulation_steps": accumulation_steps,
             "effective_batch_size": probe_sample_count,
-            "annotation_ids": [
-                record["annotation_id"]
-                for record in probe_records
-            ],
+            "annotation_ids": [record["annotation_id"] for record in probe_records],
         },
         "frozen_head": {
             **frozen_result,
-            "encoder_gradient_tensor_count": (
-                frozen_encoder_grad_tensors
-            ),
+            "encoder_gradient_tensor_count": (frozen_encoder_grad_tensors),
         },
         "lora": {
             **lora_result,
             "selected_target_count": len(target_modules),
             "adapter_parameter_count": adapter_parameter_count,
-            "unexpected_base_trainables": (
-                unexpected_base_trainables
-            ),
+            "unexpected_base_trainables": (unexpected_base_trainables),
         },
         "checks": checks,
         "claim_boundary": (
@@ -783,10 +682,7 @@ def main() -> None:
 
     print("===== SIGLIP2 BF16 ONE-UPDATE PREFLIGHT =====")
     print(f"STATUS: {status}")
-    print(
-        "BF16_SUPPORTED: "
-        f"{payload['environment']['bf16_supported']}"
-    )
+    print(f"BF16_SUPPORTED: {payload['environment']['bf16_supported']}")
     print(
         "FROZEN_GRADIENTS_FINITE_AND_PRESENT: "
         f"{checks['frozen_gradients_finite_and_present']}"
@@ -799,10 +695,7 @@ def main() -> None:
         "LORA_GRADIENTS_FINITE_AND_PRESENT: "
         f"{checks['lora_gradients_finite_and_present']}"
     )
-    print(
-        "LORA_OPTIMIZER_UPDATE_OBSERVED: "
-        f"{checks['lora_optimizer_update_observed']}"
-    )
+    print(f"LORA_OPTIMIZER_UPDATE_OBSERVED: {checks['lora_optimizer_update_observed']}")
     print(
         "FROZEN_MISSING_GRADS: "
         f"{len(frozen_result['gradients']['missing_gradient_names'])}"
@@ -812,8 +705,7 @@ def main() -> None:
         f"{len(frozen_result['gradients']['nonfinite_gradient_names'])}"
     )
     print(
-        "LORA_MISSING_GRADS: "
-        f"{len(lora_result['gradients']['missing_gradient_names'])}"
+        f"LORA_MISSING_GRADS: {len(lora_result['gradients']['missing_gradient_names'])}"
     )
     print(
         "LORA_NONFINITE_GRADS: "

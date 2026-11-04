@@ -6,7 +6,7 @@ import hashlib
 import json
 import random
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 
 
@@ -21,7 +21,7 @@ def sha256_file(path: Path) -> str:
 
 
 def stable_seed(base_seed: int, value: str) -> int:
-    encoded = f"{base_seed}|{value}".encode("utf-8")
+    encoded = f"{base_seed}|{value}".encode()
     digest = hashlib.sha256(encoded).hexdigest()
     return int(digest[:16], 16)
 
@@ -40,13 +40,13 @@ def score_multi_candidate(
         (
             (float(counts[attribute_id]) - target_counts[attribute_id])
             / max(target_counts[attribute_id], 1.0)
-        ) ** 2
+        )
+        ** 2
         for attribute_id in target_counts
     )
 
     total_error = (
-        (float(sum(counts.values())) - total_target)
-        / max(total_target, 1.0)
+        (float(sum(counts.values())) - total_target) / max(total_target, 1.0)
     ) ** 2
 
     overshoot_error = sum(
@@ -87,8 +87,7 @@ def main() -> None:
 
     if output_dir.exists():
         raise FileExistsError(
-            "Refusing to overwrite manifest output directory: "
-            f"{output_dir}"
+            f"Refusing to overwrite manifest output directory: {output_dir}"
         )
 
     with summary_path.open("r", encoding="utf-8") as handle:
@@ -125,20 +124,12 @@ def main() -> None:
     missing_columns = sorted(required_columns - observed_columns)
 
     if missing_columns:
-        raise ValueError(
-            "Source manifest columns are missing: "
-            f"{missing_columns}"
-        )
+        raise ValueError(f"Source manifest columns are missing: {missing_columns}")
 
-    annotation_ids = [
-        int(record["annotation_id"])
-        for record in all_records
-    ]
+    annotation_ids = [int(record["annotation_id"]) for record in all_records]
 
     if len(annotation_ids) != len(set(annotation_ids)):
-        raise ValueError(
-            "Source manifests contain duplicate annotation IDs."
-        )
+        raise ValueError("Source manifests contain duplicate annotation IDs.")
 
     records_by_group: dict[int, list[dict[str, str]]] = defaultdict(list)
 
@@ -146,16 +137,10 @@ def main() -> None:
         group_id = int(record["split_group_id"])
         records_by_group[group_id].append(record)
 
-    all_attribute_ids = sorted(
-        {
-            int(record["attribute_id"])
-            for record in all_records
-        }
-    )
+    all_attribute_ids = sorted({int(record["attribute_id"]) for record in all_records})
 
     attribute_names = {
-        int(record["attribute_id"]): record["attribute_name"]
-        for record in all_records
+        int(record["attribute_id"]): record["attribute_name"] for record in all_records
     }
 
     singleton_groups_by_class: dict[int, list[int]] = defaultdict(list)
@@ -164,10 +149,7 @@ def main() -> None:
     group_buckets: dict[int, str] = {}
 
     for group_id, group_records in records_by_group.items():
-        class_counts = Counter(
-            int(record["attribute_id"])
-            for record in group_records
-        )
+        class_counts = Counter(int(record["attribute_id"]) for record in group_records)
 
         group_class_counts[group_id] = class_counts
 
@@ -192,9 +174,7 @@ def main() -> None:
     for attribute_id in all_attribute_ids:
         group_ids = list(singleton_groups_by_class[attribute_id])
 
-        rng = random.Random(
-            stable_seed(args.seed, f"singleton|{attribute_id}")
-        )
+        rng = random.Random(stable_seed(args.seed, f"singleton|{attribute_id}"))
 
         rng.shuffle(group_ids)
 
@@ -208,9 +188,7 @@ def main() -> None:
     # For multi-instance groups, use deterministic greedy selection.
     # This preserves multi-instance images in BOTH train and dev while
     # targeting the class distribution inside this subgroup.
-    multi_target_group_count = int(
-        round(len(multi_group_ids) * dev_fraction)
-    )
+    multi_target_group_count = int(round(len(multi_group_ids) * dev_fraction))
 
     multi_target_group_count = max(
         1,
@@ -227,16 +205,11 @@ def main() -> None:
         for attribute_id in all_attribute_ids
     }
 
-    multi_target_samples = (
-        float(sum(multi_total_counts.values())) * dev_fraction
-    )
+    multi_target_samples = float(sum(multi_total_counts.values())) * dev_fraction
 
     rng = random.Random(stable_seed(args.seed, "multi_instance"))
 
-    random_tie = {
-        group_id: rng.random()
-        for group_id in multi_group_ids
-    }
+    random_tie = {group_id: rng.random() for group_id in multi_group_ids}
 
     remaining_multi_groups = set(multi_group_ids)
     selected_multi_groups: set[int] = set()
@@ -268,9 +241,7 @@ def main() -> None:
                 best_group_id = group_id
 
         if best_group_id is None:
-            raise RuntimeError(
-                "Failed to select a multi-instance group for dev."
-            )
+            raise RuntimeError("Failed to select a multi-instance group for dev.")
 
         selected_multi_groups.add(best_group_id)
         selected_multi_counts.update(group_class_counts[best_group_id])
@@ -280,9 +251,7 @@ def main() -> None:
     train_group_ids = set(records_by_group) - dev_group_ids
 
     if not train_group_ids or not dev_group_ids:
-        raise RuntimeError(
-            "Rebuild produced an empty train or dev partition."
-        )
+        raise RuntimeError("Rebuild produced an empty train or dev partition.")
 
     train_records = [
         record
@@ -298,32 +267,19 @@ def main() -> None:
 
     overlap = train_group_ids & dev_group_ids
 
-    total_counts = Counter(
-        int(record["attribute_id"])
-        for record in all_records
-    )
+    total_counts = Counter(int(record["attribute_id"]) for record in all_records)
 
-    train_counts = Counter(
-        int(record["attribute_id"])
-        for record in train_records
-    )
+    train_counts = Counter(int(record["attribute_id"]) for record in train_records)
 
-    dev_counts = Counter(
-        int(record["attribute_id"])
-        for record in dev_records
-    )
+    dev_counts = Counter(int(record["attribute_id"]) for record in dev_records)
 
     def bucket_summary(group_ids: set[int]) -> dict[str, int]:
         singleton_group_count = sum(
-            1
-            for group_id in group_ids
-            if group_buckets[group_id] == "singleton"
+            1 for group_id in group_ids if group_buckets[group_id] == "singleton"
         )
 
         multi_group_count = sum(
-            1
-            for group_id in group_ids
-            if group_buckets[group_id] == "multi_instance"
+            1 for group_id in group_ids if group_buckets[group_id] == "multi_instance"
         )
 
         singleton_sample_count = sum(
@@ -374,50 +330,34 @@ def main() -> None:
 
     class_rows.sort(key=lambda row: row["attribute_id"])
 
-    overall_dev_fraction = (
-        float(len(dev_records))
-        / float(len(all_records))
+    overall_dev_fraction = float(len(dev_records)) / float(len(all_records))
+
+    singleton_dev_group_fraction = float(dev_bucket["singleton_group_count"]) / float(
+        total_bucket["singleton_group_count"]
     )
 
-    singleton_dev_group_fraction = (
-        float(dev_bucket["singleton_group_count"])
-        / float(total_bucket["singleton_group_count"])
+    multi_dev_group_fraction = float(dev_bucket["multi_instance_group_count"]) / float(
+        total_bucket["multi_instance_group_count"]
     )
 
-    multi_dev_group_fraction = (
-        float(dev_bucket["multi_instance_group_count"])
-        / float(total_bucket["multi_instance_group_count"])
+    singleton_dev_sample_fraction = float(dev_bucket["singleton_sample_count"]) / float(
+        total_bucket["singleton_sample_count"]
     )
 
-    singleton_dev_sample_fraction = (
-        float(dev_bucket["singleton_sample_count"])
-        / float(total_bucket["singleton_sample_count"])
-    )
-
-    multi_dev_sample_fraction = (
-        float(dev_bucket["multi_instance_sample_count"])
-        / float(total_bucket["multi_instance_sample_count"])
-    )
+    multi_dev_sample_fraction = float(
+        dev_bucket["multi_instance_sample_count"]
+    ) / float(total_bucket["multi_instance_sample_count"])
 
     checks = {
         "source_annotation_coverage_pass": (
             len(train_records) + len(dev_records) == len(all_records)
         ),
         "group_disjoint_pass": len(overlap) == 0,
-        "all_classes_in_train_pass": all(
-            row["train_count"] > 0
-            for row in class_rows
-        ),
-        "all_classes_in_dev_pass": all(
-            row["dev_count"] > 0
-            for row in class_rows
-        ),
-        "overall_dev_fraction_pass": (
-            0.18 <= overall_dev_fraction <= 0.22
-        ),
+        "all_classes_in_train_pass": all(row["train_count"] > 0 for row in class_rows),
+        "all_classes_in_dev_pass": all(row["dev_count"] > 0 for row in class_rows),
+        "overall_dev_fraction_pass": (0.18 <= overall_dev_fraction <= 0.22),
         "class_fraction_pass": all(
-            0.17 <= row["dev_fraction"] <= 0.23
-            for row in class_rows
+            0.17 <= row["dev_fraction"] <= 0.23 for row in class_rows
         ),
         "multi_instance_groups_in_train_pass": (
             train_bucket["multi_instance_group_count"] > 0
@@ -425,9 +365,7 @@ def main() -> None:
         "multi_instance_groups_in_dev_pass": (
             dev_bucket["multi_instance_group_count"] > 0
         ),
-        "singleton_group_fraction_pass": (
-            0.17 <= singleton_dev_group_fraction <= 0.23
-        ),
+        "singleton_group_fraction_pass": (0.17 <= singleton_dev_group_fraction <= 0.23),
         "multi_instance_group_fraction_pass": (
             0.17 <= multi_dev_group_fraction <= 0.23
         ),
@@ -463,7 +401,7 @@ def main() -> None:
         "schema_version": (
             "fashionpedia_neckline_attribute_manifest_v1b_group_stratified"
         ),
-        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "created_utc": datetime.now(UTC).isoformat(),
         "selection_scope": "train_only",
         "source_manifest_artifacts": {
             "source_train_manifest": str(train_path),
@@ -483,9 +421,7 @@ def main() -> None:
             "group_key": "split_group_id=image_id",
             "dev_fraction": dev_fraction,
             "seed": int(args.seed),
-            "singleton_assignment": (
-                "deterministic class-stratified group selection"
-            ),
+            "singleton_assignment": ("deterministic class-stratified group selection"),
             "multi_instance_assignment": (
                 "deterministic greedy group selection with class-distribution "
                 "and group-size preservation"
@@ -562,12 +498,12 @@ def main() -> None:
 
     for row in class_rows:
         print(
-            f'{row["attribute_id"]:>3}  '
-            f'{row["total_count"]:>5}  '
-            f'{row["train_count"]:>5}  '
-            f'{row["dev_count"]:>4}  '
-            f'{row["dev_fraction"]:>12.3f}  '
-            f'{row["attribute_name"]}'
+            f"{row['attribute_id']:>3}  "
+            f"{row['total_count']:>5}  "
+            f"{row['train_count']:>5}  "
+            f"{row['dev_count']:>4}  "
+            f"{row['dev_fraction']:>12.3f}  "
+            f"{row['attribute_name']}"
         )
 
     print("\n===== MANIFEST CHECKS =====")

@@ -14,10 +14,9 @@ import peft
 import torch
 import torch.nn.functional as F
 import transformers
-from PIL import Image
 from peft import LoraConfig, get_peft_model
+from PIL import Image
 from transformers import AutoImageProcessor, AutoModel
-
 
 ENCODER_SELF_ATTN_PATTERN = re.compile(
     r"^vision_model\.encoder\.layers\.\d+\.self_attn\."
@@ -79,8 +78,7 @@ def crop_from_record(
 
         if right <= left or bottom <= top:
             raise ValueError(
-                "Degenerate crop for annotation_id="
-                f"{record['annotation_id']}"
+                f"Degenerate crop for annotation_id={record['annotation_id']}"
             )
 
         return image.crop((left, top, right, bottom))
@@ -103,17 +101,14 @@ def trainable_parameter_count(module: torch.nn.Module) -> int:
 
 def finite_gradients(module: torch.nn.Module) -> bool:
     trainable = [
-        parameter
-        for parameter in module.parameters()
-        if parameter.requires_grad
+        parameter for parameter in module.parameters() if parameter.requires_grad
     ]
 
     if not trainable:
         return False
 
     return all(
-        parameter.grad is not None
-        and torch.isfinite(parameter.grad).all().item()
+        parameter.grad is not None and torch.isfinite(parameter.grad).all().item()
         for parameter in trainable
     )
 
@@ -160,41 +155,26 @@ def main() -> None:
 
     device = torch.device("cuda")
 
-    expected_class_ids = [
-        int(value)
-        for value in config["target_attribute_ids"]
-    ]
+    expected_class_ids = [int(value) for value in config["target_attribute_ids"]]
 
     class_index = {
-        attribute_id: index
-        for index, attribute_id in enumerate(expected_class_ids)
+        attribute_id: index for index, attribute_id in enumerate(expected_class_ids)
     }
 
     batch_size = int(config["preflight"]["batch_size"])
     records = load_records(manifest_path, batch_size)
 
-    observed_class_ids = {
-        int(record["attribute_id"])
-        for record in records
-    }
+    observed_class_ids = {int(record["attribute_id"]) for record in records}
 
     if not observed_class_ids.issubset(set(expected_class_ids)):
         raise RuntimeError("Preflight records contain unknown target labels.")
 
-    padding_fraction = float(
-        hog_config["crop"]["padding_fraction"]
-    )
+    padding_fraction = float(hog_config["crop"]["padding_fraction"])
 
-    crops = [
-        crop_from_record(record, padding_fraction)
-        for record in records
-    ]
+    crops = [crop_from_record(record, padding_fraction) for record in records]
 
     labels = torch.tensor(
-        [
-            class_index[int(record["attribute_id"])]
-            for record in records
-        ],
+        [class_index[int(record["attribute_id"])] for record in records],
         dtype=torch.long,
         device=device,
     )
@@ -216,23 +196,15 @@ def main() -> None:
         if hasattr(value, "to")
     }
 
-    raw_audit_targets = audit[
-        "recommended_lora_scope"
-    ]["full_target_module_paths"]
+    raw_audit_targets = audit["recommended_lora_scope"]["full_target_module_paths"]
 
     selected_targets = sorted(
-        path
-        for path in raw_audit_targets
-        if ENCODER_SELF_ATTN_PATTERN.fullmatch(path)
+        path for path in raw_audit_targets if ENCODER_SELF_ATTN_PATTERN.fullmatch(path)
     )
 
-    excluded_targets = sorted(
-        set(raw_audit_targets) - set(selected_targets)
-    )
+    excluded_targets = sorted(set(raw_audit_targets) - set(selected_targets))
 
-    expected_target_count = int(
-        config["lora"]["expected_target_module_count"]
-    )
+    expected_target_count = int(config["lora"]["expected_target_module_count"])
 
     if len(selected_targets) != expected_target_count:
         raise RuntimeError(
@@ -243,10 +215,7 @@ def main() -> None:
     excluded_expected = str(config["lora"]["excluded_module"])
 
     if excluded_targets != [excluded_expected]:
-        raise RuntimeError(
-            "Unexpected excluded LoRA target set: "
-            f"{excluded_targets}"
-        )
+        raise RuntimeError(f"Unexpected excluded LoRA target set: {excluded_targets}")
 
     torch.manual_seed(int(config["head"]["initialization_seed"]))
 
@@ -264,9 +233,7 @@ def main() -> None:
         int(config["head"]["output_classes"]),
     ).to(device)
 
-    frozen_head_initial_state = copy.deepcopy(
-        frozen_head.state_dict()
-    )
+    frozen_head_initial_state = copy.deepcopy(frozen_head.state_dict())
 
     with torch.no_grad():
         frozen_features = frozen_model.get_image_features(
@@ -282,9 +249,7 @@ def main() -> None:
     frozen_head_gradients_finite = finite_gradients(frozen_head)
 
     frozen_model_grad_count = sum(
-        1
-        for parameter in frozen_model.parameters()
-        if parameter.grad is not None
+        1 for parameter in frozen_model.parameters() if parameter.grad is not None
     )
 
     frozen_feature_shape = list(frozen_features.shape)
@@ -308,15 +273,12 @@ def main() -> None:
     original_module_map = dict(base_model.named_modules())
 
     missing_target_modules = [
-        path
-        for path in selected_targets
-        if path not in original_module_map
+        path for path in selected_targets if path not in original_module_map
     ]
 
     if missing_target_modules:
         raise RuntimeError(
-            "Audited LoRA targets missing from model: "
-            f"{missing_target_modules}"
+            f"Audited LoRA targets missing from model: {missing_target_modules}"
         )
 
     invalid_target_modules = [
@@ -330,8 +292,7 @@ def main() -> None:
 
     if invalid_target_modules:
         raise RuntimeError(
-            "Audited LoRA targets are not Linear modules: "
-            f"{invalid_target_modules}"
+            f"Audited LoRA targets are not Linear modules: {invalid_target_modules}"
         )
 
     rank = int(config["lora"]["rank"])
@@ -387,10 +348,8 @@ def main() -> None:
     lora_head.load_state_dict(frozen_head_initial_state)
 
     with torch.no_grad():
-        lora_features_initial = (
-            lora_base_model.get_image_features(
-                **model_inputs,
-            )
+        lora_features_initial = lora_base_model.get_image_features(
+            **model_inputs,
         )
 
     lora_logits_initial = lora_head(lora_features_initial)
@@ -409,10 +368,7 @@ def main() -> None:
     # would add memory pressure. Instead, use logits equality as the
     # adapter no-op qualification after matching head initialization.
     initial_logit_delta = float(
-        (
-            lora_logits_initial.detach().float().cpu()
-            - frozen_logits_cpu
-        )
+        (lora_logits_initial.detach().float().cpu() - frozen_logits_cpu)
         .abs()
         .max()
         .item()
@@ -447,15 +403,11 @@ def main() -> None:
     unexpected_base_trainables = [
         name
         for name, _ in lora_named_trainable
-        if ".lora_A." not in name
-        and ".lora_B." not in name
+        if ".lora_A." not in name and ".lora_B." not in name
     ]
 
     actual_lora_parameter_count = int(
-        sum(
-            parameter.numel()
-            for _, parameter in lora_adapter_trainables
-        )
+        sum(parameter.numel() for _, parameter in lora_adapter_trainables)
     )
 
     lora_gradients_finite = finite_gradients(lora_model)
@@ -463,15 +415,10 @@ def main() -> None:
 
     torch.cuda.synchronize(device)
 
-    noop_tolerance = float(
-        config["preflight"]["initial_noop_max_abs_tolerance"]
-    )
+    noop_tolerance = float(config["preflight"]["initial_noop_max_abs_tolerance"])
 
     head_parameter_count = int(
-        sum(
-            parameter.numel()
-            for parameter in lora_head.parameters()
-        )
+        sum(parameter.numel() for parameter in lora_head.parameters())
     )
 
     checks = {
@@ -479,40 +426,21 @@ def main() -> None:
         "selected_target_count_matches": (
             len(selected_targets) == expected_target_count
         ),
-        "excluded_pooling_head_only": (
-            excluded_targets == [excluded_expected]
-        ),
+        "excluded_pooling_head_only": (excluded_targets == [excluded_expected]),
         "all_selected_targets_injected": (
             len(injected_targets) == len(selected_targets)
         ),
         "adapter_parameter_count_matches": (
-            actual_lora_parameter_count
-            == expected_lora_parameter_count
+            actual_lora_parameter_count == expected_lora_parameter_count
         ),
-        "no_unexpected_base_trainables": (
-            len(unexpected_base_trainables) == 0
-        ),
-        "frozen_head_gradients_finite": (
-            frozen_head_gradients_finite
-        ),
-        "frozen_encoder_has_no_grads": (
-            frozen_model_grad_count == 0
-        ),
-        "lora_adapter_gradients_finite": (
-            lora_gradients_finite
-        ),
-        "lora_head_gradients_finite": (
-            lora_head_gradients_finite
-        ),
-        "finite_lora_features": bool(
-            torch.isfinite(lora_features_train).all().item()
-        ),
-        "finite_lora_logits": bool(
-            torch.isfinite(lora_logits_train).all().item()
-        ),
-        "initial_logits_match_frozen": (
-            initial_logit_delta <= noop_tolerance
-        ),
+        "no_unexpected_base_trainables": (len(unexpected_base_trainables) == 0),
+        "frozen_head_gradients_finite": (frozen_head_gradients_finite),
+        "frozen_encoder_has_no_grads": (frozen_model_grad_count == 0),
+        "lora_adapter_gradients_finite": (lora_gradients_finite),
+        "lora_head_gradients_finite": (lora_head_gradients_finite),
+        "finite_lora_features": bool(torch.isfinite(lora_features_train).all().item()),
+        "finite_lora_logits": bool(torch.isfinite(lora_logits_train).all().item()),
+        "initial_logits_match_frozen": (initial_logit_delta <= noop_tolerance),
         "head_parameter_count_expected": (
             head_parameter_count
             == (
@@ -540,17 +468,10 @@ def main() -> None:
         "gpu_name": torch.cuda.get_device_name(0),
         "batch": {
             "sample_count": len(records),
-            "annotation_ids": [
-                record["annotation_id"]
-                for record in records
-            ],
-            "label_attribute_ids": [
-                int(record["attribute_id"])
-                for record in records
-            ],
+            "annotation_ids": [record["annotation_id"] for record in records],
+            "label_attribute_ids": [int(record["attribute_id"]) for record in records],
             "processor_inputs": {
-                name: list(value.shape)
-                for name, value in model_inputs.items()
+                name: list(value.shape) for name, value in model_inputs.items()
             },
         },
         "lora_scope": {
@@ -565,40 +486,22 @@ def main() -> None:
         },
         "parameters": {
             "base_model_parameters": int(
-                sum(
-                    parameter.numel()
-                    for parameter in lora_base_model.parameters()
-                )
+                sum(parameter.numel() for parameter in lora_base_model.parameters())
             ),
-            "classification_head_trainable_parameters": (
-                head_parameter_count
-            ),
-            "expected_lora_trainable_parameters": (
-                expected_lora_parameter_count
-            ),
-            "actual_lora_trainable_parameters": (
-                actual_lora_parameter_count
-            ),
+            "classification_head_trainable_parameters": (head_parameter_count),
+            "expected_lora_trainable_parameters": (expected_lora_parameter_count),
+            "actual_lora_trainable_parameters": (actual_lora_parameter_count),
             "total_lora_plus_head_trainable_parameters": (
-                actual_lora_parameter_count
-                + head_parameter_count
+                actual_lora_parameter_count + head_parameter_count
             ),
-            "unexpected_base_trainable_parameter_names": (
-                unexpected_base_trainables
-            ),
+            "unexpected_base_trainable_parameter_names": (unexpected_base_trainables),
         },
         "forward_backward": {
             "frozen_feature_shape": frozen_feature_shape,
             "frozen_loss": float(frozen_loss.detach().cpu().item()),
-            "lora_feature_shape": list(
-                lora_features_train.shape
-            ),
-            "lora_loss": float(
-                lora_loss.detach().cpu().item()
-            ),
-            "initial_logit_max_abs_delta": (
-                initial_logit_delta
-            ),
+            "lora_feature_shape": list(lora_features_train.shape),
+            "lora_loss": float(lora_loss.detach().cpu().item()),
+            "initial_logit_max_abs_delta": (initial_logit_delta),
             "initial_feature_reference_note": (
                 "Logit equality is tested with the same head "
                 "initialization; default LoRA initialization should "
@@ -618,23 +521,14 @@ def main() -> None:
     print(f"STATUS: {status}")
     print(f"SELECTED_TARGET_MODULES: {len(selected_targets)}")
     print(f"INJECTED_TARGET_MODULES: {len(injected_targets)}")
-    print(
-        "EXPECTED_LORA_TRAINABLE_PARAMS: "
-        f"{expected_lora_parameter_count}"
-    )
-    print(
-        "ACTUAL_LORA_TRAINABLE_PARAMS: "
-        f"{actual_lora_parameter_count}"
-    )
+    print(f"EXPECTED_LORA_TRAINABLE_PARAMS: {expected_lora_parameter_count}")
+    print(f"ACTUAL_LORA_TRAINABLE_PARAMS: {actual_lora_parameter_count}")
     print(f"HEAD_TRAINABLE_PARAMS: {head_parameter_count}")
     print(
         "TOTAL_LORA_PLUS_HEAD_TRAINABLE_PARAMS: "
         f"{actual_lora_parameter_count + head_parameter_count}"
     )
-    print(
-        "INITIAL_LOGIT_MAX_ABS_DELTA: "
-        f"{initial_logit_delta:.10f}"
-    )
+    print(f"INITIAL_LOGIT_MAX_ABS_DELTA: {initial_logit_delta:.10f}")
     print(f"FROZEN_LOSS: {float(frozen_loss.detach().cpu().item()):.6f}")
     print(f"LORA_LOSS: {float(lora_loss.detach().cpu().item()):.6f}")
 

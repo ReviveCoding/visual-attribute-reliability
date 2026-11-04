@@ -10,17 +10,19 @@ import shutil
 import sys
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+import peft
 import scipy
-from scipy.optimize import minimize_scalar
 import sklearn
 import torch
-from PIL import Image
+import transformers
 from peft import PeftModel
+from PIL import Image
+from scipy.optimize import minimize_scalar
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -30,9 +32,6 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
 )
 from transformers import AutoImageProcessor, AutoModel
-import peft
-import transformers
-
 
 EPS = 1e-12
 TARGET_IDS_DEFAULT = [182, 183, 185, 187, 189, 190, 200]
@@ -69,7 +68,9 @@ def write_csv(path: Path, fieldnames: list[str], rows: list[dict[str, Any]]) -> 
         writer.writerows(rows)
 
 
-def required_columns(rows: list[dict[str, str]], required: set[str], artifact: Path) -> None:
+def required_columns(
+    rows: list[dict[str, str]], required: set[str], artifact: Path
+) -> None:
     missing = sorted(required - set(rows[0]))
     if missing:
         raise RuntimeError(f"{artifact} is missing required columns: {missing}")
@@ -308,7 +309,9 @@ def crop_from_record(record: dict[str, Any], padding_fraction: float) -> Image.I
     width = float(record["bbox_width"])
     height = float(record["bbox_height"])
     if width <= 0.0 or height <= 0.0:
-        raise ValueError(f"Non-positive bbox for annotation_id={record['annotation_id']}")
+        raise ValueError(
+            f"Non-positive bbox for annotation_id={record['annotation_id']}"
+        )
     with Image.open(image_path) as source:
         image = source.convert("RGB")
         image_width, image_height = image.size
@@ -319,7 +322,9 @@ def crop_from_record(record: dict[str, Any], padding_fraction: float) -> Image.I
         right = min(image_width, int(math.ceil(x + width + pad_x)))
         bottom = min(image_height, int(math.ceil(y + height + pad_y)))
         if right <= left or bottom <= top:
-            raise ValueError(f"Degenerate crop for annotation_id={record['annotation_id']}")
+            raise ValueError(
+                f"Degenerate crop for annotation_id={record['annotation_id']}"
+            )
         return image.crop((left, top, right, bottom))
 
 
@@ -347,7 +352,9 @@ def softmax(logits: np.ndarray) -> np.ndarray:
     return probabilities
 
 
-def top_label_ece(probabilities: np.ndarray, targets: np.ndarray, bins: int) -> tuple[float, list[dict[str, Any]]]:
+def top_label_ece(
+    probabilities: np.ndarray, targets: np.ndarray, bins: int
+) -> tuple[float, list[dict[str, Any]]]:
     predictions = probabilities.argmax(axis=1)
     confidence = probabilities.max(axis=1)
     correct = (predictions == targets).astype(np.float64)
@@ -393,7 +400,9 @@ def metric_bundle(
     accuracy = float(accuracy_score(labels, predictions))
     balanced_accuracy = float(balanced_accuracy_score(labels, predictions))
     macro_f1 = float(f1_score(labels, predictions, average="macro", zero_division=0))
-    weighted_f1 = float(f1_score(labels, predictions, average="weighted", zero_division=0))
+    weighted_f1 = float(
+        f1_score(labels, predictions, average="weighted", zero_division=0)
+    )
     nll = float(log_loss(labels, probabilities, labels=list(range(n_classes))))
     one_hot = np.eye(n_classes, dtype=np.float64)[labels]
     brier = float(np.mean(np.sum((probabilities - one_hot) ** 2, axis=1)))
@@ -439,12 +448,21 @@ def probabilities_from_saved_dev_predictions(
     target_ids: list[int],
 ) -> tuple[np.ndarray, np.ndarray]:
     rows = load_csv(path)
-    required = {"true_attribute_id"} | {f"probability_attribute_{attr_id}" for attr_id in target_ids}
+    required = {"true_attribute_id"} | {
+        f"probability_attribute_{attr_id}" for attr_id in target_ids
+    }
     required_columns(rows, required, path)
-    target_to_index = {attribute_id: index for index, attribute_id in enumerate(target_ids)}
-    labels = np.asarray([target_to_index[int(row["true_attribute_id"])] for row in rows], dtype=np.int64)
+    target_to_index = {
+        attribute_id: index for index, attribute_id in enumerate(target_ids)
+    }
+    labels = np.asarray(
+        [target_to_index[int(row["true_attribute_id"])] for row in rows], dtype=np.int64
+    )
     probabilities = np.asarray(
-        [[float(row[f"probability_attribute_{attr_id}"]) for attr_id in target_ids] for row in rows],
+        [
+            [float(row[f"probability_attribute_{attr_id}"]) for attr_id in target_ids]
+            for row in rows
+        ],
         dtype=np.float64,
     )
     if not np.isfinite(probabilities).all() or np.any(probabilities < 0.0):
@@ -458,13 +476,19 @@ def probabilities_from_saved_dev_predictions(
 
 def fit_temperature(probabilities: np.ndarray, labels: np.ndarray) -> dict[str, Any]:
     base_logits = np.log(np.clip(probabilities, EPS, 1.0))
-    before = float(log_loss(labels, softmax(base_logits), labels=list(range(probabilities.shape[1]))))
+    before = float(
+        log_loss(
+            labels, softmax(base_logits), labels=list(range(probabilities.shape[1]))
+        )
+    )
 
     def objective(temperature: float) -> float:
         if not np.isfinite(temperature) or temperature <= 0.0:
             return float("inf")
         calibrated = softmax(base_logits / float(temperature))
-        return float(log_loss(labels, calibrated, labels=list(range(probabilities.shape[1]))))
+        return float(
+            log_loss(labels, calibrated, labels=list(range(probabilities.shape[1])))
+        )
 
     result = minimize_scalar(
         objective,
@@ -477,7 +501,9 @@ def fit_temperature(probabilities: np.ndarray, labels: np.ndarray) -> dict[str, 
     temperature = float(result.x)
     after = objective(temperature)
     calibrated = softmax(base_logits / temperature)
-    predictions_unchanged = bool(np.array_equal(probabilities.argmax(axis=1), calibrated.argmax(axis=1)))
+    predictions_unchanged = bool(
+        np.array_equal(probabilities.argmax(axis=1), calibrated.argmax(axis=1))
+    )
     return {
         "method": "single_scalar_temperature_scaling",
         "optimization_scope": "selected_development_predictions_only",
@@ -511,7 +537,9 @@ def predict_logits(
     chunks: list[np.ndarray] = []
     for start in range(0, len(records), batch_size):
         end = min(start + batch_size, len(records))
-        inputs = make_inputs(records[start:end], image_processor, device, padding_fraction)
+        inputs = make_inputs(
+            records[start:end], image_processor, device, padding_fraction
+        )
         with torch.inference_mode():
             with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
                 features = encoder.get_image_features(**inputs)
@@ -527,7 +555,9 @@ def predict_logits(
     return logits
 
 
-def load_head(checkpoint_path: Path, input_dimension: int, class_count: int, device: torch.device) -> torch.nn.Module:
+def load_head(
+    checkpoint_path: Path, input_dimension: int, class_count: int, device: torch.device
+) -> torch.nn.Module:
     checkpoint = torch.load(checkpoint_path, map_location="cpu")
     if "head_state_dict" not in checkpoint:
         raise RuntimeError(f"Missing head_state_dict in {checkpoint_path}")
@@ -561,11 +591,15 @@ def load_frozen_arm(
     for parameter in model.parameters():
         parameter.requires_grad = False
     head = load_head(checkpoint_path, input_dimension, class_count, device)
-    return model, head, {
-        "model_class": model.__class__.__name__,
-        "adapter_parameter_count": 0,
-        "checkpoint_path": str(checkpoint_path),
-    }
+    return (
+        model,
+        head,
+        {
+            "model_class": model.__class__.__name__,
+            "adapter_parameter_count": 0,
+            "checkpoint_path": str(checkpoint_path),
+        },
+    )
 
 
 def load_lora_arm(
@@ -590,13 +624,17 @@ def load_lora_arm(
         parameter.requires_grad = False
     encoder = lora_model.get_base_model()
     head = load_head(checkpoint_path, input_dimension, class_count, device)
-    return encoder, head, {
-        "model_class": encoder.__class__.__name__,
-        "adapter_model_class": lora_model.__class__.__name__,
-        "adapter_parameter_count": count_lora_parameters(lora_model),
-        "checkpoint_path": str(checkpoint_path),
-        "adapter_directory": str(adapter_dir),
-    }
+    return (
+        encoder,
+        head,
+        {
+            "model_class": encoder.__class__.__name__,
+            "adapter_model_class": lora_model.__class__.__name__,
+            "adapter_parameter_count": count_lora_parameters(lora_model),
+            "checkpoint_path": str(checkpoint_path),
+            "adapter_directory": str(adapter_dir),
+        },
+    )
 
 
 def prediction_rows(
@@ -625,13 +663,19 @@ def prediction_rows(
             "raw_confidence": float(raw_probabilities[index].max()),
             "raw_correct": bool(raw_indices[index] == labels[index]),
             "calibrated_predicted_attribute_id": calibrated_attribute_id,
-            "calibrated_predicted_attribute_name": target_names[calibrated_attribute_id],
+            "calibrated_predicted_attribute_name": target_names[
+                calibrated_attribute_id
+            ],
             "calibrated_confidence": float(calibrated_probabilities[index].max()),
             "calibrated_correct": bool(calibrated_indices[index] == labels[index]),
         }
         for class_index, attribute_id in enumerate(target_ids):
-            row[f"raw_probability_attribute_{attribute_id}"] = float(raw_probabilities[index, class_index])
-            row[f"calibrated_probability_attribute_{attribute_id}"] = float(calibrated_probabilities[index, class_index])
+            row[f"raw_probability_attribute_{attribute_id}"] = float(
+                raw_probabilities[index, class_index]
+            )
+            row[f"calibrated_probability_attribute_{attribute_id}"] = float(
+                calibrated_probabilities[index, class_index]
+            )
         rows.append(row)
     return rows
 
@@ -659,9 +703,13 @@ def confirmation_arm(
     head_path = Path(str(artifacts.get("head_state_path", "")))
     dev_predictions_path = Path(str(artifacts.get("best_dev_predictions_csv", "")))
     if not head_path.is_file():
-        raise FileNotFoundError(f"Selected head checkpoint is missing for {arm_name}: {head_path}")
+        raise FileNotFoundError(
+            f"Selected head checkpoint is missing for {arm_name}: {head_path}"
+        )
     if not dev_predictions_path.is_file():
-        raise FileNotFoundError(f"Selected development predictions are missing for {arm_name}: {dev_predictions_path}")
+        raise FileNotFoundError(
+            f"Selected development predictions are missing for {arm_name}: {dev_predictions_path}"
+        )
 
     input_dimension = 768
     class_count = len(target_ids)
@@ -674,12 +722,20 @@ def confirmation_arm(
         if not adapter_dir.is_dir():
             raise FileNotFoundError(f"Selected LoRA adapter is missing: {adapter_dir}")
         encoder, head, load_info = load_lora_arm(
-            model_id, cache_dir, adapter_dir, head_path, input_dimension, class_count, device
+            model_id,
+            cache_dir,
+            adapter_dir,
+            head_path,
+            input_dimension,
+            class_count,
+            device,
         )
     else:
         raise ValueError(f"Unknown arm: {arm_name}")
 
-    dev_probabilities, dev_labels = probabilities_from_saved_dev_predictions(dev_predictions_path, target_ids)
+    dev_probabilities, dev_labels = probabilities_from_saved_dev_predictions(
+        dev_predictions_path, target_ids
+    )
     temperature_info = fit_temperature(dev_probabilities, dev_labels)
     temperature = float(temperature_info["temperature"])
 
@@ -698,12 +754,21 @@ def confirmation_arm(
 
     raw_prediction_indices = raw_probabilities.argmax(axis=1)
     calibrated_prediction_indices = calibrated_probabilities.argmax(axis=1)
-    calibration_argmax_unchanged = bool(np.array_equal(raw_prediction_indices, calibrated_prediction_indices))
+    calibration_argmax_unchanged = bool(
+        np.array_equal(raw_prediction_indices, calibrated_prediction_indices)
+    )
     if not calibration_argmax_unchanged:
-        raise RuntimeError("Temperature scaling unexpectedly changed final argmax predictions.")
+        raise RuntimeError(
+            "Temperature scaling unexpectedly changed final argmax predictions."
+        )
 
     rows = prediction_rows(
-        records, labels, raw_probabilities, calibrated_probabilities, target_ids, target_names
+        records,
+        labels,
+        raw_probabilities,
+        calibrated_probabilities,
+        target_ids,
+        target_names,
     )
     prediction_fields = list(rows[0].keys())
     predictions_path = arm_dir / "confirmation_predictions.csv"
@@ -720,8 +785,22 @@ def confirmation_arm(
         ["attribute_id", "attribute_name", "precision", "recall", "f1", "support"],
         per_class,
     )
-    write_json(raw_ece_path, {"top_label_ece": raw_metrics["top_label_ece"], "bin_count": ece_bins, "bins": raw_ece_rows})
-    write_json(calibrated_ece_path, {"top_label_ece": calibrated_metrics["top_label_ece"], "bin_count": ece_bins, "bins": calibrated_ece_rows})
+    write_json(
+        raw_ece_path,
+        {
+            "top_label_ece": raw_metrics["top_label_ece"],
+            "bin_count": ece_bins,
+            "bins": raw_ece_rows,
+        },
+    )
+    write_json(
+        calibrated_ece_path,
+        {
+            "top_label_ece": calibrated_metrics["top_label_ece"],
+            "bin_count": ece_bins,
+            "bins": calibrated_ece_rows,
+        },
+    )
     write_json(temperature_path, temperature_info)
     np.save(logits_path, raw_logits.astype(np.float32, copy=False))
 
@@ -732,16 +811,19 @@ def confirmation_arm(
         "raw_prediction_count_matches_confirmation": len(rows) == len(records),
         "temperature_optimizer_success": bool(temperature_info["optimizer_success"]),
         "temperature_positive": temperature > 0.0,
-        "temperature_preserves_argmax_on_development": bool(temperature_info["development_argmax_unchanged"]),
+        "temperature_preserves_argmax_on_development": bool(
+            temperature_info["development_argmax_unchanged"]
+        ),
         "temperature_preserves_argmax_on_confirmation": calibration_argmax_unchanged,
         "finite_raw_metrics": all(np.isfinite(value) for value in raw_metrics.values()),
-        "finite_calibrated_metrics": all(np.isfinite(value) for value in calibrated_metrics.values()),
+        "finite_calibrated_metrics": all(
+            np.isfinite(value) for value in calibrated_metrics.values()
+        ),
     }
     if arm_name == "lora":
-        qualification_checks["adapter_parameter_count_matches_development"] = (
-            int(load_info["adapter_parameter_count"])
-            == int(development_arm_summary["parameter_counts"]["lora_adapter"])
-        )
+        qualification_checks["adapter_parameter_count_matches_development"] = int(
+            load_info["adapter_parameter_count"]
+        ) == int(development_arm_summary["parameter_counts"]["lora_adapter"])
 
     status = "PASS" if all(qualification_checks.values()) else "REVIEW"
     summary = {
@@ -781,7 +863,9 @@ def confirmation_arm(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Final untouched Fashionpedia validation confirmation.")
+    parser = argparse.ArgumentParser(
+        description="Final untouched Fashionpedia validation confirmation."
+    )
     parser.add_argument("--run-root", required=True)
     parser.add_argument("--source-train-manifest", required=True)
     parser.add_argument("--source-dev-manifest", required=True)
@@ -832,11 +916,15 @@ def main() -> None:
         if run_summary.get(arm_name, {}).get("status") != "PASS":
             raise RuntimeError(f"Development arm is not PASS: {arm_name}")
 
-    target_ids = [int(value) for value in config.get("target_attribute_ids", TARGET_IDS_DEFAULT)]
+    target_ids = [
+        int(value) for value in config.get("target_attribute_ids", TARGET_IDS_DEFAULT)
+    ]
     if target_ids != TARGET_IDS_DEFAULT:
         raise RuntimeError(f"Unexpected target class list: {target_ids}")
     target_set = set(target_ids)
-    target_names = {int(key): str(value) for key, value in config["target_attribute_names"].items()}
+    target_names = {
+        int(key): str(value) for key, value in config["target_attribute_names"].items()
+    }
     if set(target_names) != target_set:
         raise RuntimeError("Target attribute name map does not match target IDs.")
 
@@ -858,9 +946,13 @@ def main() -> None:
     required_columns(train_manifest, source_required, train_manifest_path)
     required_columns(dev_manifest, source_required, dev_manifest_path)
     source_rows = train_manifest + dev_manifest
-    source_pairs = [canonical_pair(row["annotation_id"], row["attribute_id"]) for row in source_rows]
+    source_pairs = [
+        canonical_pair(row["annotation_id"], row["attribute_id"]) for row in source_rows
+    ]
     if len(source_pairs) != len(set(source_pairs)):
-        raise RuntimeError("Source train/dev manifests contain duplicate annotation/attribute pairs.")
+        raise RuntimeError(
+            "Source train/dev manifests contain duplicate annotation/attribute pairs."
+        )
 
     train_payload = load_json(train_annotation_path)
     reconstructed_pairs = build_train_rule_pairs(
@@ -904,9 +996,18 @@ def main() -> None:
     class_counts = Counter(int(row["attribute_id"]) for row in validation_rows)
     missing_classes = sorted(target_set - set(class_counts))
     if missing_classes:
-        raise RuntimeError(f"Official validation lacks target classes: {missing_classes}")
-    if len({canonical_pair(row["annotation_id"], row["attribute_id"]) for row in validation_rows}) != len(validation_rows):
-        raise RuntimeError("Official validation manifest contains duplicate annotation/attribute pairs.")
+        raise RuntimeError(
+            f"Official validation lacks target classes: {missing_classes}"
+        )
+    if len(
+        {
+            canonical_pair(row["annotation_id"], row["attribute_id"])
+            for row in validation_rows
+        }
+    ) != len(validation_rows):
+        raise RuntimeError(
+            "Official validation manifest contains duplicate annotation/attribute pairs."
+        )
 
     manifest_path = manifest_dir / "official_validation_manifest.csv"
     write_csv(
@@ -938,7 +1039,10 @@ def main() -> None:
         },
         "official_validation": {
             **val_stats,
-            "class_counts": {str(attribute_id): int(class_counts[attribute_id]) for attribute_id in target_ids},
+            "class_counts": {
+                str(attribute_id): int(class_counts[attribute_id])
+                for attribute_id in target_ids
+            },
             "source_train_dev_image_id_overlap_count": len(image_overlap),
             "all_images_resolved": True,
         },
@@ -962,7 +1066,9 @@ def main() -> None:
             },
         },
     }
-    write_json(manifest_dir / "official_validation_manifest_summary.json", manifest_summary)
+    write_json(
+        manifest_dir / "official_validation_manifest_summary.json", manifest_summary
+    )
 
     print("===== FINAL CONFIRMATION MANIFEST AUDIT =====", flush=True)
     print("STATUS: PASS", flush=True)
@@ -977,14 +1083,21 @@ def main() -> None:
     print(f"OFFICIAL_VALIDATION_MANIFEST: {manifest_path}", flush=True)
 
     labels = np.asarray(
-        [{attribute_id: index for index, attribute_id in enumerate(target_ids)}[int(row["attribute_id"])] for row in validation_rows],
+        [
+            {attribute_id: index for index, attribute_id in enumerate(target_ids)}[
+                int(row["attribute_id"])
+            ]
+            for row in validation_rows
+        ],
         dtype=np.int64,
     )
     cache_dir.mkdir(parents=True, exist_ok=True)
     device = torch.device("cuda")
     torch.cuda.empty_cache()
     torch.cuda.reset_peak_memory_stats(device)
-    image_processor = AutoImageProcessor.from_pretrained(model_id, cache_dir=str(cache_dir), use_fast=False)
+    image_processor = AutoImageProcessor.from_pretrained(
+        model_id, cache_dir=str(cache_dir), use_fast=False
+    )
 
     frozen_summary = confirmation_arm(
         "frozen_head",
@@ -1024,7 +1137,11 @@ def main() -> None:
     comparisons: dict[str, dict[str, float]] = {}
     for scope, frozen_metrics, lora_metrics in (
         ("raw", frozen_summary["raw_metrics"], lora_summary["raw_metrics"]),
-        ("temperature_calibrated", frozen_summary["temperature_calibrated_metrics"], lora_summary["temperature_calibrated_metrics"]),
+        (
+            "temperature_calibrated",
+            frozen_summary["temperature_calibrated_metrics"],
+            lora_summary["temperature_calibrated_metrics"],
+        ),
     ):
         comparisons[scope] = {
             metric: float(lora_metrics[metric] - frozen_metrics[metric])
@@ -1038,13 +1155,15 @@ def main() -> None:
         "official_validation_all_target_classes_present": len(missing_classes) == 0,
         "frozen_confirmation_pass": frozen_summary["status"] == "PASS",
         "lora_confirmation_pass": lora_summary["status"] == "PASS",
-        "lora_adapter_parameter_count_matches_development": lora_summary["qualification_checks"].get("adapter_parameter_count_matches_development", False),
+        "lora_adapter_parameter_count_matches_development": lora_summary[
+            "qualification_checks"
+        ].get("adapter_parameter_count_matches_development", False),
     }
     overall_status = "PASS" if all(qualification_checks.values()) else "REVIEW"
     summary = {
         "status": overall_status,
         "schema_version": "fashionpedia_neckline_final_confirmation_v2",
-        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "created_utc": datetime.now(UTC).isoformat(),
         "evaluation_scope": "untouched_official_fashionpedia_validation",
         "selection_scope": "fixed_from_train_only_development_before_validation_access",
         "model_id": model_id,
@@ -1053,14 +1172,19 @@ def main() -> None:
             "official_validation_images": len(confirmation_ids),
             "target_category_id": target_category_id,
             "target_category_name": target_category_name,
-            "class_counts": {str(attribute_id): int(class_counts[attribute_id]) for attribute_id in target_ids},
+            "class_counts": {
+                str(attribute_id): int(class_counts[attribute_id])
+                for attribute_id in target_ids
+            },
         },
         "manifest_summary": manifest_summary,
         "frozen_head": frozen_summary,
         "lora": lora_summary,
         "lora_minus_frozen_head": comparisons,
         "qualification_checks": qualification_checks,
-        "gpu_peak_memory_allocated_mib": round(torch.cuda.max_memory_allocated(device) / (1024 ** 2), 2),
+        "gpu_peak_memory_allocated_mib": round(
+            torch.cuda.max_memory_allocated(device) / (1024**2), 2
+        ),
         "elapsed_seconds": round(time.perf_counter() - started, 3),
         "claim_boundary": "External confirmation is limited to Fashionpedia validation instances eligible under the source task rule. No post-validation checkpoint, hyperparameter, crop, rank, or target-module changes were performed by this runner.",
     }
@@ -1069,13 +1193,32 @@ def main() -> None:
 
     print("===== FINAL FASHIONPEDIA CONFIRMATION SUMMARY =====", flush=True)
     print(f"STATUS: {overall_status}", flush=True)
-    print(f"FROZEN_RAW_MACRO_F1: {frozen_summary['raw_metrics']['macro_f1']:.6f}", flush=True)
-    print(f"LORA_RAW_MACRO_F1: {lora_summary['raw_metrics']['macro_f1']:.6f}", flush=True)
-    print(f"LORA_MINUS_FROZEN_RAW_MACRO_F1: {comparisons['raw']['macro_f1']:.6f}", flush=True)
-    print(f"FROZEN_RAW_ECE: {frozen_summary['raw_metrics']['top_label_ece']:.6f}", flush=True)
-    print(f"LORA_RAW_ECE: {lora_summary['raw_metrics']['top_label_ece']:.6f}", flush=True)
-    print(f"FROZEN_CALIBRATED_ECE: {frozen_summary['temperature_calibrated_metrics']['top_label_ece']:.6f}", flush=True)
-    print(f"LORA_CALIBRATED_ECE: {lora_summary['temperature_calibrated_metrics']['top_label_ece']:.6f}", flush=True)
+    print(
+        f"FROZEN_RAW_MACRO_F1: {frozen_summary['raw_metrics']['macro_f1']:.6f}",
+        flush=True,
+    )
+    print(
+        f"LORA_RAW_MACRO_F1: {lora_summary['raw_metrics']['macro_f1']:.6f}", flush=True
+    )
+    print(
+        f"LORA_MINUS_FROZEN_RAW_MACRO_F1: {comparisons['raw']['macro_f1']:.6f}",
+        flush=True,
+    )
+    print(
+        f"FROZEN_RAW_ECE: {frozen_summary['raw_metrics']['top_label_ece']:.6f}",
+        flush=True,
+    )
+    print(
+        f"LORA_RAW_ECE: {lora_summary['raw_metrics']['top_label_ece']:.6f}", flush=True
+    )
+    print(
+        f"FROZEN_CALIBRATED_ECE: {frozen_summary['temperature_calibrated_metrics']['top_label_ece']:.6f}",
+        flush=True,
+    )
+    print(
+        f"LORA_CALIBRATED_ECE: {lora_summary['temperature_calibrated_metrics']['top_label_ece']:.6f}",
+        flush=True,
+    )
     print(f"SUMMARY_JSON: {summary_path}", flush=True)
     if overall_status != "PASS":
         raise SystemExit(2)

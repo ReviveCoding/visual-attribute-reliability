@@ -6,9 +6,10 @@ import hashlib
 import itertools
 import json
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 TARGET_IDS_DEFAULT = [182, 183, 185, 187, 189, 190, 200]
 
@@ -109,7 +110,9 @@ def annotation_row(
         "bbox_valid": valid_bbox(annotation),
         "segmentation_kind": segmentation_kind(annotation),
         "segmentation_nonempty": has_nonempty_segmentation(annotation),
-        "all_attribute_ids": [int(value) for value in raw_attributes if str(value).lstrip("-").isdigit()],
+        "all_attribute_ids": [
+            int(value) for value in raw_attributes if str(value).lstrip("-").isdigit()
+        ],
         "target_attribute_hits": target_hits(annotation, target_ids),
     }
 
@@ -213,14 +216,18 @@ def main() -> None:
     train_annotation_path = Path(args.source_train_annotation).resolve()
     output_path = Path(args.output_json).resolve()
     task_config_path = Path(args.task_config).resolve() if args.task_config else None
-    task_audit_path = Path(args.task_audit_json).resolve() if args.task_audit_json else None
+    task_audit_path = (
+        Path(args.task_audit_json).resolve() if args.task_audit_json else None
+    )
 
     for path in (train_manifest_path, dev_manifest_path, train_annotation_path):
         if not path.is_file():
             raise FileNotFoundError(f"Required source artifact missing: {path}")
     for optional_path in (task_config_path, task_audit_path):
         if optional_path is not None and not optional_path.is_file():
-            raise FileNotFoundError(f"Optional source artifact was requested but missing: {optional_path}")
+            raise FileNotFoundError(
+                f"Optional source artifact was requested but missing: {optional_path}"
+            )
     if output_path.exists():
         raise FileExistsError(f"Refusing to overwrite forensic output: {output_path}")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -234,15 +241,18 @@ def main() -> None:
     ):
         missing = sorted(required_columns - set(rows[0]))
         if missing:
-            raise RuntimeError(f"{name} source manifest missing required columns: {missing}")
+            raise RuntimeError(
+                f"{name} source manifest missing required columns: {missing}"
+            )
 
     source_rows = train_rows + dev_rows
     source_pairs = {
-        canonical_pair(row["annotation_id"], row["attribute_id"])
-        for row in source_rows
+        canonical_pair(row["annotation_id"], row["attribute_id"]) for row in source_rows
     }
     if len(source_pairs) != len(source_rows):
-        raise RuntimeError("Source manifests contain duplicate annotation/attribute pairs.")
+        raise RuntimeError(
+            "Source manifests contain duplicate annotation/attribute pairs."
+        )
 
     target_ids = sorted({int(row["attribute_id"]) for row in source_rows})
     if target_ids != TARGET_IDS_DEFAULT:
@@ -255,7 +265,9 @@ def main() -> None:
     annotations = payload.get("annotations", [])
     categories = payload.get("categories", [])
     if not isinstance(annotations, list) or not isinstance(categories, list):
-        raise RuntimeError("Fashionpedia train annotation JSON has invalid annotations/categories fields.")
+        raise RuntimeError(
+            "Fashionpedia train annotation JSON has invalid annotations/categories fields."
+        )
     category_names = {int(row["id"]): str(row.get("name", "")) for row in categories}
     annotation_by_id = {int(row["id"]): row for row in annotations}
     if len(annotation_by_id) != len(annotations):
@@ -272,7 +284,9 @@ def main() -> None:
     source_annotation_ids = {pair[0] for pair in source_pairs}
     baseline_annotation_ids = {pair[0] for pair in baseline_pairs}
     if source_annotation_ids - set(annotation_by_id):
-        raise RuntimeError("Source manifests reference annotation IDs absent from source train JSON.")
+        raise RuntimeError(
+            "Source manifests reference annotation IDs absent from source train JSON."
+        )
 
     source_records = [
         annotation_row(annotation_by_id[annotation_id], target_set, category_names)
@@ -312,7 +326,9 @@ def main() -> None:
                     annotations,
                     target_set,
                     source_pairs,
-                    lambda annotation, combo=combo: all(rule(annotation) for _, rule in combo),
+                    lambda annotation, combo=combo: all(
+                        rule(annotation) for _, rule in combo
+                    ),
                     data_derived=False,
                 )
             )
@@ -323,7 +339,9 @@ def main() -> None:
             annotations,
             target_set,
             source_pairs,
-            lambda annotation: int(annotation.get("category_id", -1)) in source_category_ids,
+            lambda annotation: (
+                int(annotation.get("category_id", -1)) in source_category_ids
+            ),
             data_derived=True,
         )
     )
@@ -340,7 +358,10 @@ def main() -> None:
     ]
 
     config_hints: dict[str, Any] = {}
-    for label, optional_path in (("task_config", task_config_path), ("task_audit_json", task_audit_path)):
+    for label, optional_path in (
+        ("task_config", task_config_path),
+        ("task_audit_json", task_audit_path),
+    ):
         if optional_path is None:
             continue
         loaded = load_json(optional_path)
@@ -353,7 +374,7 @@ def main() -> None:
     payload_out = {
         "status": "PASS",
         "schema_version": "fashionpedia_neckline_source_rule_forensics_v1",
-        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "created_utc": datetime.now(UTC).isoformat(),
         "scope": "source_train_only_forensics_no_validation_access_no_model_loading",
         "validation_annotation_loaded": False,
         "validation_images_scanned": False,
@@ -375,8 +396,12 @@ def main() -> None:
             "source_pair_reproduction_pass": source_pairs == baseline_pairs,
             "missing_source_pair_count": len(missing_source_pairs),
             "unexpected_pair_count": len(unexpected_pairs),
-            "missing_source_examples": [list(pair) for pair in sorted(missing_source_pairs)[:20]],
-            "unexpected_pair_examples": [list(pair) for pair in sorted(unexpected_pairs)[:20]],
+            "missing_source_examples": [
+                list(pair) for pair in sorted(missing_source_pairs)[:20]
+            ],
+            "unexpected_pair_examples": [
+                list(pair) for pair in sorted(unexpected_pairs)[:20]
+            ],
         },
         "unexpected_pair_forensics": {
             "record_count": len(unexpected_records),
@@ -384,8 +409,12 @@ def main() -> None:
             "category_id_counts": count_by(unexpected_records, "category_id"),
             "category_name_counts": count_by(unexpected_records, "category_name"),
             "iscrowd_counts": count_by(unexpected_records, "iscrowd"),
-            "segmentation_kind_counts": count_by(unexpected_records, "segmentation_kind"),
-            "segmentation_nonempty_counts": count_by(unexpected_records, "segmentation_nonempty"),
+            "segmentation_kind_counts": count_by(
+                unexpected_records, "segmentation_kind"
+            ),
+            "segmentation_nonempty_counts": count_by(
+                unexpected_records, "segmentation_nonempty"
+            ),
         },
         "source_pair_forensics": {
             "record_count": len(source_records),
@@ -393,7 +422,9 @@ def main() -> None:
             "category_name_counts": count_by(source_records, "category_name"),
             "iscrowd_counts": count_by(source_records, "iscrowd"),
             "segmentation_kind_counts": count_by(source_records, "segmentation_kind"),
-            "segmentation_nonempty_counts": count_by(source_records, "segmentation_nonempty"),
+            "segmentation_nonempty_counts": count_by(
+                source_records, "segmentation_nonempty"
+            ),
             "observed_category_ids": sorted(source_category_ids),
         },
         "candidate_filter_tests": filter_reports,
@@ -416,8 +447,12 @@ def main() -> None:
     print(f"BASELINE_RECONSTRUCTED_PAIRS: {len(baseline_pairs)}", flush=True)
     print(f"MISSING_SOURCE_PAIRS: {len(missing_source_pairs)}", flush=True)
     print(f"UNEXPECTED_RECONSTRUCTED_PAIRS: {len(unexpected_pairs)}", flush=True)
-    print(f"EXACT_NON_DATA_DERIVED_FILTER_MATCHES: {exact_non_data_matches}", flush=True)
-    print(f"EXACT_DATA_DERIVED_FILTER_MATCHES: {exact_data_derived_matches}", flush=True)
+    print(
+        f"EXACT_NON_DATA_DERIVED_FILTER_MATCHES: {exact_non_data_matches}", flush=True
+    )
+    print(
+        f"EXACT_DATA_DERIVED_FILTER_MATCHES: {exact_data_derived_matches}", flush=True
+    )
     print("VALIDATION_ANNOTATION_LOADED: False", flush=True)
     print("VALIDATION_IMAGES_SCANNED: False", flush=True)
     print("MODEL_LOADED: False", flush=True)

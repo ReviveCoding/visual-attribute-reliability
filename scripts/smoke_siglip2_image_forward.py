@@ -9,8 +9,8 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from PIL import Image
 import transformers
+from PIL import Image
 from transformers import AutoImageProcessor, AutoModel
 
 
@@ -40,8 +40,7 @@ def crop_from_record(
 
     if width <= 0.0 or height <= 0.0:
         raise ValueError(
-            "Non-positive bbox for "
-            f"annotation_id={record['annotation_id']}"
+            f"Non-positive bbox for annotation_id={record['annotation_id']}"
         )
 
     with Image.open(image_path) as source:
@@ -64,8 +63,7 @@ def crop_from_record(
 
         if right <= left or bottom <= top:
             raise ValueError(
-                "Degenerate crop for "
-                f"annotation_id={record['annotation_id']}"
+                f"Degenerate crop for annotation_id={record['annotation_id']}"
             )
 
         return image.crop((left, top, right, bottom))
@@ -95,17 +93,13 @@ def main() -> None:
     with hog_config_path.open("r", encoding="utf-8") as handle:
         hog_config = json.load(handle)
 
-    padding_fraction = float(
-        hog_config["crop"]["padding_fraction"]
-    )
+    padding_fraction = float(hog_config["crop"]["padding_fraction"])
 
     record = load_first_record(manifest_path)
     crop = crop_from_record(record, padding_fraction)
 
     if not torch.cuda.is_available():
-        raise RuntimeError(
-            "CUDA is unavailable in the active venv."
-        )
+        raise RuntimeError("CUDA is unavailable in the active venv.")
 
     device = torch.device("cuda")
     torch.cuda.empty_cache()
@@ -144,22 +138,13 @@ def main() -> None:
 
     torch.cuda.synchronize(device)
 
-    features = (
-        image_features.detach()
-        .float()
-        .cpu()
-        .numpy()
-    )
+    features = image_features.detach().float().cpu().numpy()
 
     if features.ndim != 2 or features.shape[0] != 1:
-        raise RuntimeError(
-            f"Unexpected embedding shape: {features.shape}"
-        )
+        raise RuntimeError(f"Unexpected embedding shape: {features.shape}")
 
     if not np.isfinite(features).all():
-        raise RuntimeError(
-            "Embedding contains non-finite values."
-        )
+        raise RuntimeError("Embedding contains non-finite values.")
 
     payload = {
         "status": "PASS",
@@ -176,11 +161,11 @@ def main() -> None:
         "device": str(device),
         "gpu_name": torch.cuda.get_device_name(0),
         "gpu_total_memory_mib": round(
-            torch.cuda.get_device_properties(0).total_memory / (1024 ** 2),
+            torch.cuda.get_device_properties(0).total_memory / (1024**2),
             2,
         ),
         "gpu_peak_memory_allocated_mib": round(
-            torch.cuda.max_memory_allocated(device) / (1024 ** 2),
+            torch.cuda.max_memory_allocated(device) / (1024**2),
             2,
         ),
         "model_parameter_count": int(
@@ -205,9 +190,7 @@ def main() -> None:
         "feature_shape": list(features.shape),
         "feature_dtype": str(features.dtype),
         "feature_l2_norm": float(np.linalg.norm(features[0])),
-        "finite_feature_values": bool(
-            np.isfinite(features).all()
-        ),
+        "finite_feature_values": bool(np.isfinite(features).all()),
         "claim_boundary": (
             "Single-crop frozen SigLIP2 image-forward smoke test only. "
             "No full-manifest feature extraction, classifier fitting, "
