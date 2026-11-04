@@ -8,16 +8,16 @@ import math
 import os
 import sys
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-
 
 RAW_METRICS = (
     "accuracy",
@@ -190,7 +190,9 @@ def make_contact_sheet(
     columns = 3
     rows = max(1, math.ceil(max(1, len(examples)) / columns))
     header_height = 44
-    sheet = Image.new("RGB", (columns * tile_width, header_height + rows * tile_height), "white")
+    sheet = Image.new(
+        "RGB", (columns * tile_width, header_height + rows * tile_height), "white"
+    )
     draw = ImageDraw.Draw(sheet)
     font = ImageFont.load_default()
     draw.text((10, 12), title, fill="black", font=font)
@@ -212,8 +214,15 @@ def make_contact_sheet(
             sheet.paste(crop, (x, y))
             image_status = "resolved"
         except Exception as exc:  # noqa: BLE001
-            draw.rectangle((x0 + 5, y0 + 5, x0 + tile_width - 5, y0 + 220), outline="black")
-            draw.text((x0 + 10, y0 + 15), f"crop unavailable: {type(exc).__name__}", fill="black", font=font)
+            draw.rectangle(
+                (x0 + 5, y0 + 5, x0 + tile_width - 5, y0 + 220), outline="black"
+            )
+            draw.text(
+                (x0 + 10, y0 + 15),
+                f"crop unavailable: {type(exc).__name__}",
+                fill="black",
+                font=font,
+            )
             image_status = f"unavailable:{type(exc).__name__}"
         lines = [
             f"true: {example['true_attribute_name']}",
@@ -222,7 +231,9 @@ def make_contact_sheet(
             f"ann: {example['annotation_id']} image: {example['image_id']}",
         ]
         for line_index, line in enumerate(lines):
-            draw.text((x0 + 8, y0 + 230 + 18 * line_index), line, fill="black", font=font)
+            draw.text(
+                (x0 + 8, y0 + 230 + 18 * line_index), line, fill="black", font=font
+            )
         index_rows.append(
             {
                 "contact_sheet": output.name,
@@ -247,13 +258,17 @@ def main() -> None:
     confirmation_summary_path = Path(args.confirmation_summary).resolve()
     output_dir = Path(args.output_dir).resolve()
     if not confirmation_summary_path.is_file():
-        raise FileNotFoundError(f"Missing confirmation summary: {confirmation_summary_path}")
+        raise FileNotFoundError(
+            f"Missing confirmation summary: {confirmation_summary_path}"
+        )
     if output_dir.exists():
         raise FileExistsError(f"Refusing to overwrite analysis directory: {output_dir}")
 
     summary = read_json(confirmation_summary_path)
     if summary.get("status") != "PASS":
-        raise RuntimeError(f"Final confirmation status is not PASS: {summary.get('status')!r}")
+        raise RuntimeError(
+            f"Final confirmation status is not PASS: {summary.get('status')!r}"
+        )
     if summary.get("evaluation_scope") != "untouched_official_fashionpedia_validation":
         raise RuntimeError("Unexpected confirmation scope.")
 
@@ -265,16 +280,28 @@ def main() -> None:
     tables_dir.mkdir()
     crops_dir.mkdir()
 
-    frozen_predictions_path = find_artifact(summary, "frozen_head", "confirmation_predictions_csv")
-    lora_predictions_path = find_artifact(summary, "lora", "confirmation_predictions_csv")
-    frozen_per_class_path = find_artifact(summary, "frozen_head", "raw_per_class_metrics_csv")
+    frozen_predictions_path = find_artifact(
+        summary, "frozen_head", "confirmation_predictions_csv"
+    )
+    lora_predictions_path = find_artifact(
+        summary, "lora", "confirmation_predictions_csv"
+    )
+    frozen_per_class_path = find_artifact(
+        summary, "frozen_head", "raw_per_class_metrics_csv"
+    )
     lora_per_class_path = find_artifact(summary, "lora", "raw_per_class_metrics_csv")
     frozen_ece_path = find_artifact(summary, "frozen_head", "raw_ece_bins_json")
     lora_ece_path = find_artifact(summary, "lora", "raw_ece_bins_json")
 
-    validation_manifest_path = confirmation_summary_path.parent / "manifest" / "official_validation_manifest.csv"
+    validation_manifest_path = (
+        confirmation_summary_path.parent
+        / "manifest"
+        / "official_validation_manifest.csv"
+    )
     if not validation_manifest_path.is_file():
-        raise FileNotFoundError(f"Missing official validation manifest: {validation_manifest_path}")
+        raise FileNotFoundError(
+            f"Missing official validation manifest: {validation_manifest_path}"
+        )
 
     frozen_predictions = read_csv(frozen_predictions_path)
     lora_predictions = read_csv(lora_predictions_path)
@@ -297,9 +324,15 @@ def main() -> None:
 
     target_ids = [int(value) for value in summary["data"]["class_counts"].keys()]
     # Preserve fixed original task order from prediction probability headers.
-    probability_headers = [key for key in frozen_predictions[0] if key.startswith("raw_probability_attribute_")]
+    probability_headers = [
+        key
+        for key in frozen_predictions[0]
+        if key.startswith("raw_probability_attribute_")
+    ]
     target_ids = [int(key.rsplit("_", 1)[1]) for key in probability_headers]
-    target_names = {int(row["attribute_id"]): row["attribute_name"] for row in frozen_per_class}
+    target_names = {
+        int(row["attribute_id"]): row["attribute_name"] for row in frozen_per_class
+    }
     labels = [target_names[attribute_id] for attribute_id in target_ids]
     index_by_id = {attribute_id: index for index, attribute_id in enumerate(target_ids)}
 
@@ -320,10 +353,13 @@ def main() -> None:
         frozen_matrix[index_by_id[true_id], index_by_id[frozen_id]] += 1
         lora_matrix[index_by_id[true_id], index_by_id[lora_id]] += 1
         transition = (
-            "both_correct" if frozen_correct and lora_correct else
-            "lora_corrected" if (not frozen_correct and lora_correct) else
-            "lora_regressed" if (frozen_correct and not lora_correct) else
-            "both_wrong"
+            "both_correct"
+            if frozen_correct and lora_correct
+            else "lora_corrected"
+            if (not frozen_correct and lora_correct)
+            else "lora_regressed"
+            if (frozen_correct and not lora_correct)
+            else "both_wrong"
         )
         transitions[transition] += 1
         combined_rows.append(
@@ -334,7 +370,9 @@ def main() -> None:
                 "true_attribute_id": true_id,
                 "true_attribute_name": frozen["true_attribute_name"],
                 "frozen_predicted_attribute_id": frozen_id,
-                "frozen_predicted_attribute_name": frozen["raw_predicted_attribute_name"],
+                "frozen_predicted_attribute_name": frozen[
+                    "raw_predicted_attribute_name"
+                ],
                 "frozen_confidence": float(frozen["raw_confidence"]),
                 "frozen_correct": frozen_correct,
                 "lora_predicted_attribute_id": lora_id,
@@ -375,30 +413,82 @@ def main() -> None:
                 "metric": metric,
                 "frozen": float(frozen_metrics[metric]),
                 "lora": float(lora_metrics[metric]),
-                "lora_minus_frozen": float(lora_metrics[metric]) - float(frozen_metrics[metric]),
+                "lora_minus_frozen": float(lora_metrics[metric])
+                - float(frozen_metrics[metric]),
             }
         )
-    write_csv(tables_dir / "official_validation_metric_comparison.csv", list(raw_metric_rows[0]), raw_metric_rows)
-    write_csv(tables_dir / "official_validation_per_class_comparison.csv", list(per_class_rows[0]), per_class_rows)
-    transition_rows = [{"transition": key, "count": value, "fraction": value / len(combined_rows)} for key, value in sorted(transitions.items())]
-    write_csv(tables_dir / "prediction_transition_summary.csv", ["transition", "count", "fraction"], transition_rows)
-    write_csv(tables_dir / "paired_official_validation_predictions.csv", list(combined_rows[0]), combined_rows)
+    write_csv(
+        tables_dir / "official_validation_metric_comparison.csv",
+        list(raw_metric_rows[0]),
+        raw_metric_rows,
+    )
+    write_csv(
+        tables_dir / "official_validation_per_class_comparison.csv",
+        list(per_class_rows[0]),
+        per_class_rows,
+    )
+    transition_rows = [
+        {"transition": key, "count": value, "fraction": value / len(combined_rows)}
+        for key, value in sorted(transitions.items())
+    ]
+    write_csv(
+        tables_dir / "prediction_transition_summary.csv",
+        ["transition", "count", "fraction"],
+        transition_rows,
+    )
+    write_csv(
+        tables_dir / "paired_official_validation_predictions.csv",
+        list(combined_rows[0]),
+        combined_rows,
+    )
 
-    plot_per_class_f1(per_class_rows, figures_dir / "official_validation_per_class_f1.png")
-    plot_confusion(frozen_matrix, labels, "Frozen SigLIP2: raw confusion matrix", figures_dir / "official_validation_frozen_confusion_matrix.png")
-    plot_confusion(lora_matrix, labels, "LoRA SigLIP2: raw confusion matrix", figures_dir / "official_validation_lora_confusion_matrix.png")
-    plot_reliability(frozen_ece, lora_ece, figures_dir / "official_validation_raw_reliability.png")
+    plot_per_class_f1(
+        per_class_rows, figures_dir / "official_validation_per_class_f1.png"
+    )
+    plot_confusion(
+        frozen_matrix,
+        labels,
+        "Frozen SigLIP2: raw confusion matrix",
+        figures_dir / "official_validation_frozen_confusion_matrix.png",
+    )
+    plot_confusion(
+        lora_matrix,
+        labels,
+        "LoRA SigLIP2: raw confusion matrix",
+        figures_dir / "official_validation_lora_confusion_matrix.png",
+    )
+    plot_reliability(
+        frozen_ece, lora_ece, figures_dir / "official_validation_raw_reliability.png"
+    )
 
     max_examples = max(1, int(args.max_examples_per_group))
     examples_by_transition: dict[str, list[dict[str, Any]]] = {}
     for transition in ("lora_corrected", "lora_regressed", "both_wrong"):
         candidates = [row for row in combined_rows if row["transition"] == transition]
         if transition == "lora_corrected":
-            candidates.sort(key=lambda row: (-row["lora_confidence"], row["frozen_confidence"], int(row["annotation_id"])))
+            candidates.sort(
+                key=lambda row: (
+                    -row["lora_confidence"],
+                    row["frozen_confidence"],
+                    int(row["annotation_id"]),
+                )
+            )
         elif transition == "lora_regressed":
-            candidates.sort(key=lambda row: (-row["frozen_confidence"], row["lora_confidence"], int(row["annotation_id"])))
+            candidates.sort(
+                key=lambda row: (
+                    -row["frozen_confidence"],
+                    row["lora_confidence"],
+                    int(row["annotation_id"]),
+                )
+            )
         else:
-            candidates.sort(key=lambda row: (-row["lora_confidence"], -row["frozen_confidence"], int(row["annotation_id"])))
+            candidates.sort(
+                key=lambda row: (
+                    -row["lora_confidence"],
+                    -row["frozen_confidence"],
+                    int(row["annotation_id"]),
+                )
+            )
         examples_by_transition[transition] = candidates[:max_examples]
 
     crop_index_rows: list[dict[str, Any]] = []
@@ -417,7 +507,11 @@ def main() -> None:
             )
         )
     if crop_index_rows:
-        write_csv(crops_dir / "representative_case_index.csv", list(crop_index_rows[0]), crop_index_rows)
+        write_csv(
+            crops_dir / "representative_case_index.csv",
+            list(crop_index_rows[0]),
+            crop_index_rows,
+        )
 
     metric_lookup = {row["metric"]: row for row in raw_metric_rows}
     report_lines = [
@@ -439,7 +533,9 @@ def main() -> None:
         "",
     ]
     for row in transition_rows:
-        report_lines.append(f"- {row['transition']}: {row['count']} ({row['fraction']:.1%})")
+        report_lines.append(
+            f"- {row['transition']}: {row['count']} ({row['fraction']:.1%})"
+        )
     report_lines += [
         "",
         "## Interpretation guardrails",
@@ -459,13 +555,15 @@ def main() -> None:
         "- `figures/official_validation_raw_reliability.png`",
         "- `representative_crops/`",
     ]
-    (output_dir / "POST_VALIDATION_ANALYSIS_REPORT.md").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+    (output_dir / "POST_VALIDATION_ANALYSIS_REPORT.md").write_text(
+        "\n".join(report_lines) + "\n", encoding="utf-8"
+    )
 
     output_files = sorted(path for path in output_dir.rglob("*") if path.is_file())
     artifact_manifest = {
         "status": "PASS",
         "schema_version": "fashionpedia_post_validation_analysis_v1",
-        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "created_utc": datetime.now(UTC).isoformat(),
         "analysis_scope": "read_only_post_hoc_descriptive_analysis",
         "no_model_runtime_loaded": True,
         "no_inference_performed": True,
@@ -483,7 +581,11 @@ def main() -> None:
         "official_validation_samples": len(combined_rows),
         "prediction_transition_counts": dict(transitions),
         "files": [
-            {"relative_path": str(path.relative_to(output_dir)), "sha256": sha256_file(path), "bytes": path.stat().st_size}
+            {
+                "relative_path": str(path.relative_to(output_dir)),
+                "sha256": sha256_file(path),
+                "bytes": path.stat().st_size,
+            }
             for path in output_files
         ],
     }
@@ -495,8 +597,14 @@ def main() -> None:
     print(f"LORA_CORRECTED: {transitions['lora_corrected']}", flush=True)
     print(f"LORA_REGRESSED: {transitions['lora_regressed']}", flush=True)
     print(f"BOTH_WRONG: {transitions['both_wrong']}", flush=True)
-    print(f"ANALYSIS_REPORT: {output_dir / 'POST_VALIDATION_ANALYSIS_REPORT.md'}", flush=True)
-    print(f"ANALYSIS_MANIFEST: {output_dir / 'analysis_artifact_manifest.json'}", flush=True)
+    print(
+        f"ANALYSIS_REPORT: {output_dir / 'POST_VALIDATION_ANALYSIS_REPORT.md'}",
+        flush=True,
+    )
+    print(
+        f"ANALYSIS_MANIFEST: {output_dir / 'analysis_artifact_manifest.json'}",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":

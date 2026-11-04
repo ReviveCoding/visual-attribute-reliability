@@ -12,7 +12,7 @@ import shutil
 import sys
 import time
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -21,8 +21,8 @@ import sklearn
 import torch
 import torch.nn.functional as F
 import transformers
-from PIL import Image
 from peft import LoraConfig, get_peft_model
+from PIL import Image
 from sklearn.metrics import (
     accuracy_score,
     balanced_accuracy_score,
@@ -32,7 +32,6 @@ from sklearn.metrics import (
     precision_recall_fscore_support,
 )
 from transformers import AutoImageProcessor, AutoModel
-
 
 ENCODER_SELF_ATTN_PATTERN = re.compile(
     r"^vision_model\.encoder\.layers\.\d+\.self_attn\."
@@ -95,9 +94,7 @@ def load_manifest(path: Path) -> list[dict[str, str]]:
     missing = sorted(required - set(rows[0]))
 
     if missing:
-        raise RuntimeError(
-            f"Manifest missing required columns: {missing}"
-        )
+        raise RuntimeError(f"Manifest missing required columns: {missing}")
 
     return rows
 
@@ -118,8 +115,7 @@ def crop_from_record(
 
     if not image_path.is_file():
         raise FileNotFoundError(
-            "Missing image for annotation_id="
-            f"{record['annotation_id']}: {image_path}"
+            f"Missing image for annotation_id={record['annotation_id']}: {image_path}"
         )
 
     x = float(record["bbox_x"])
@@ -129,8 +125,7 @@ def crop_from_record(
 
     if width <= 0.0 or height <= 0.0:
         raise ValueError(
-            "Non-positive bbox for annotation_id="
-            f"{record['annotation_id']}"
+            f"Non-positive bbox for annotation_id={record['annotation_id']}"
         )
 
     with Image.open(image_path) as source:
@@ -153,8 +148,7 @@ def crop_from_record(
 
         if right <= left or bottom <= top:
             raise ValueError(
-                "Degenerate crop for annotation_id="
-                f"{record['annotation_id']}"
+                f"Degenerate crop for annotation_id={record['annotation_id']}"
             )
 
         return image.crop((left, top, right, bottom))
@@ -166,10 +160,7 @@ def prepare_inputs(
     device: torch.device,
     padding_fraction: float,
 ) -> dict[str, torch.Tensor]:
-    crops = [
-        crop_from_record(record, padding_fraction)
-        for record in records
-    ]
+    crops = [crop_from_record(record, padding_fraction) for record in records]
 
     processor_outputs = image_processor(
         images=crops,
@@ -196,9 +187,7 @@ def cpu_state_dict(module: torch.nn.Module) -> dict:
 
 
 def count_parameters(module: torch.nn.Module) -> int:
-    return int(
-        sum(parameter.numel() for parameter in module.parameters())
-    )
+    return int(sum(parameter.numel() for parameter in module.parameters()))
 
 
 def trainable_named_parameters(
@@ -249,10 +238,7 @@ def gradient_health(
         "missing_gradient_names": missing,
         "nonfinite_gradient_names": nonfinite,
         "max_abs_gradient": max_abs_gradient,
-        "all_present_and_finite": (
-            len(missing) == 0
-            and len(nonfinite) == 0
-        ),
+        "all_present_and_finite": (len(missing) == 0 and len(nonfinite) == 0),
     }
 
 
@@ -274,15 +260,9 @@ def top_label_ece(
         upper = float(edges[index + 1])
 
         if index == bin_count - 1:
-            mask = (
-                (confidence >= lower)
-                & (confidence <= upper)
-            )
+            mask = (confidence >= lower) & (confidence <= upper)
         else:
-            mask = (
-                (confidence >= lower)
-                & (confidence < upper)
-            )
+            mask = (confidence >= lower) & (confidence < upper)
 
         count = int(mask.sum())
 
@@ -317,22 +297,14 @@ def build_class_weights(
     counts = np.bincount(labels, minlength=class_count)
 
     if np.any(counts <= 0):
-        raise RuntimeError(
-            "Every target class must appear in train labels."
-        )
+        raise RuntimeError("Every target class must appear in train labels.")
 
     total = float(labels.shape[0])
-    raw = total / (
-        float(class_count)
-        * counts.astype(np.float64)
-    )
+    raw = total / (float(class_count) * counts.astype(np.float64))
 
     return (
         torch.tensor(raw, dtype=torch.float32, device=device),
-        {
-            str(index): float(raw[index])
-            for index in range(class_count)
-        },
+        {str(index): float(raw[index]) for index in range(class_count)},
     )
 
 
@@ -393,22 +365,13 @@ def evaluate(
             )
 
             if not torch.isfinite(loss).item():
-                raise FloatingPointError(
-                    "Non-finite evaluation loss."
-                )
+                raise FloatingPointError("Non-finite evaluation loss.")
 
-            logits_chunks.append(
-                logits.detach().float().cpu().numpy()
-            )
+            logits_chunks.append(logits.detach().float().cpu().numpy())
 
-            target_chunks.append(
-                batch_targets.detach().cpu().numpy()
-            )
+            target_chunks.append(batch_targets.detach().cpu().numpy())
 
-            weighted_loss_sum += (
-                float(loss.detach().cpu().item())
-                * len(batch_records)
-            )
+            weighted_loss_sum += float(loss.detach().cpu().item()) * len(batch_records)
 
             observed_count += len(batch_records)
 
@@ -419,10 +382,7 @@ def evaluate(
         len(records),
         len(target_attribute_ids),
     ):
-        raise RuntimeError(
-            "Unexpected evaluation logit shape: "
-            f"{logits_all.shape}"
-        )
+        raise RuntimeError(f"Unexpected evaluation logit shape: {logits_all.shape}")
 
     shifted = logits_all - logits_all.max(
         axis=1,
@@ -436,19 +396,15 @@ def evaluate(
     )
 
     if not np.isfinite(probabilities).all():
-        raise FloatingPointError(
-            "Non-finite evaluation probabilities."
-        )
+        raise FloatingPointError("Non-finite evaluation probabilities.")
 
     predicted_indices = probabilities.argmax(axis=1)
 
-    precision, recall, f1, support = (
-        precision_recall_fscore_support(
-            y_true,
-            predicted_indices,
-            labels=list(range(len(target_attribute_ids))),
-            zero_division=0,
-        )
+    precision, recall, f1, support = precision_recall_fscore_support(
+        y_true,
+        predicted_indices,
+        labels=list(range(len(target_attribute_ids))),
+        zero_division=0,
     )
 
     confusion = confusion_matrix(
@@ -469,12 +425,8 @@ def evaluate(
         "evaluation_weighted_cross_entropy": (
             weighted_loss_sum / float(observed_count)
         ),
-        "accuracy": float(
-            accuracy_score(y_true, predicted_indices)
-        ),
-        "balanced_accuracy": float(
-            balanced_accuracy_score(y_true, predicted_indices)
-        ),
+        "accuracy": float(accuracy_score(y_true, predicted_indices)),
+        "balanced_accuracy": float(balanced_accuracy_score(y_true, predicted_indices)),
         "macro_f1": float(
             f1_score(
                 y_true,
@@ -507,7 +459,8 @@ def evaluate(
                             len(target_attribute_ids),
                             dtype=np.float64,
                         )[y_true]
-                    ) ** 2,
+                    )
+                    ** 2,
                     axis=1,
                 )
             )
@@ -525,15 +478,11 @@ def evaluate(
 
     per_class_rows = []
 
-    for class_index, attribute_id in enumerate(
-        target_attribute_ids
-    ):
+    for class_index, attribute_id in enumerate(target_attribute_ids):
         per_class_rows.append(
             {
                 "attribute_id": int(attribute_id),
-                "attribute_name": target_attribute_names[
-                    int(attribute_id)
-                ],
+                "attribute_name": target_attribute_names[int(attribute_id)],
                 "precision": float(precision[class_index]),
                 "recall": float(recall[class_index]),
                 "f1": float(f1[class_index]),
@@ -544,9 +493,7 @@ def evaluate(
     prediction_rows = []
 
     for row_index, record in enumerate(records):
-        predicted_attribute_id = target_attribute_ids[
-            int(predicted_indices[row_index])
-        ]
+        predicted_attribute_id = target_attribute_ids[int(predicted_indices[row_index])]
 
         row = {
             "annotation_id": record["annotation_id"],
@@ -555,29 +502,16 @@ def evaluate(
             "image_path": record["image_path"],
             "true_attribute_id": int(record["attribute_id"]),
             "true_attribute_name": record["attribute_name"],
-            "predicted_attribute_id": int(
-                predicted_attribute_id
-            ),
+            "predicted_attribute_id": int(predicted_attribute_id),
             "predicted_attribute_name": (
-                target_attribute_names[
-                    predicted_attribute_id
-                ]
+                target_attribute_names[predicted_attribute_id]
             ),
-            "confidence": float(
-                probabilities[row_index].max()
-            ),
-            "correct": bool(
-                predicted_attribute_id
-                == int(record["attribute_id"])
-            ),
+            "confidence": float(probabilities[row_index].max()),
+            "correct": bool(predicted_attribute_id == int(record["attribute_id"])),
         }
 
-        for class_position, attribute_id in enumerate(
-            target_attribute_ids
-        ):
-            row[
-                f"probability_attribute_{attribute_id}"
-            ] = float(
+        for class_position, attribute_id in enumerate(target_attribute_ids):
+            row[f"probability_attribute_{attribute_id}"] = float(
                 probabilities[row_index, class_position]
             )
 
@@ -585,22 +519,14 @@ def evaluate(
 
     confusion_rows = []
 
-    for true_index, true_attribute_id in enumerate(
-        target_attribute_ids
-    ):
+    for true_index, true_attribute_id in enumerate(target_attribute_ids):
         row = {
             "true_attribute_id": int(true_attribute_id),
-            "true_attribute_name": target_attribute_names[
-                int(true_attribute_id)
-            ],
+            "true_attribute_name": target_attribute_names[int(true_attribute_id)],
         }
 
-        for predicted_index, predicted_attribute_id in enumerate(
-            target_attribute_ids
-        ):
-            row[
-                f"predicted_attribute_{predicted_attribute_id}"
-            ] = int(
+        for predicted_index, predicted_attribute_id in enumerate(target_attribute_ids):
+            row[f"predicted_attribute_{predicted_attribute_id}"] = int(
                 confusion[true_index, predicted_index]
             )
 
@@ -641,18 +567,14 @@ def train_epoch(
 
     head.train()
 
-    order = np.random.default_rng(
-        shuffle_seed + epoch
-    ).permutation(len(train_records))
+    order = np.random.default_rng(shuffle_seed + epoch).permutation(len(train_records))
 
     total_loss = 0.0
     total_samples = 0
     optimizer_steps = 0
     max_abs_gradient = 0.0
 
-    effective_group_size = (
-        physical_batch_size * accumulation_steps
-    )
+    effective_group_size = physical_batch_size * accumulation_steps
 
     for group_start in range(
         0,
@@ -660,7 +582,7 @@ def train_epoch(
         effective_group_size,
     ):
         group_indices = order[
-            group_start:min(
+            group_start : min(
                 group_start + effective_group_size,
                 len(train_records),
             )
@@ -668,7 +590,7 @@ def train_epoch(
 
         micro_batches = [
             group_indices[
-                start:min(
+                start : min(
                     start + physical_batch_size,
                     len(group_indices),
                 )
@@ -683,10 +605,7 @@ def train_epoch(
         optimizer.zero_grad(set_to_none=True)
 
         for micro_indices in micro_batches:
-            batch_records = [
-                train_records[int(index)]
-                for index in micro_indices
-            ]
+            batch_records = [train_records[int(index)] for index in micro_indices]
 
             batch_targets = torch.tensor(
                 train_labels[micro_indices],
@@ -739,24 +658,15 @@ def train_epoch(
                     f"group_start={group_start}"
                 )
 
-            (
-                raw_loss / float(len(micro_batches))
-            ).backward()
+            (raw_loss / float(len(micro_batches))).backward()
 
-            total_loss += (
-                float(raw_loss.detach().cpu().item())
-                * len(batch_records)
-            )
+            total_loss += float(raw_loss.detach().cpu().item()) * len(batch_records)
 
             total_samples += len(batch_records)
 
         trainable = trainable_named_parameters(
             head=head,
-            lora_model=(
-                None
-                if arm_name == "frozen_head"
-                else mode_module
-            ),
+            lora_model=(None if arm_name == "frozen_head" else mode_module),
         )
 
         health = gradient_health(trainable)
@@ -788,17 +698,14 @@ def train_epoch(
 
         if not torch.isfinite(clip_value).item():
             raise FloatingPointError(
-                "Non-finite gradient norm "
-                f"arm={arm_name} epoch={epoch}"
+                f"Non-finite gradient norm arm={arm_name} epoch={epoch}"
             )
 
         optimizer.step()
         optimizer_steps += 1
 
     return {
-        "train_weighted_cross_entropy": (
-            total_loss / float(total_samples)
-        ),
+        "train_weighted_cross_entropy": (total_loss / float(total_samples)),
         "optimizer_steps": int(optimizer_steps),
         "max_abs_gradient": float(max_abs_gradient),
     }
@@ -811,18 +718,11 @@ def better_candidate(
     if current_best is None:
         return True
 
-    if (
-        candidate["macro_f1"]
-        > current_best["macro_f1"] + 1e-12
-    ):
+    if candidate["macro_f1"] > current_best["macro_f1"] + 1e-12:
         return True
 
     return (
-        abs(
-            candidate["macro_f1"]
-            - current_best["macro_f1"]
-        )
-        <= 1e-12
+        abs(candidate["macro_f1"] - current_best["macro_f1"]) <= 1e-12
         and candidate["negative_log_likelihood"]
         < current_best["negative_log_likelihood"]
     )
@@ -866,11 +766,7 @@ def save_checkpoint(
         "arm_name": arm_name,
         "epoch": int(epoch),
         "head_state_path": str(head_path),
-        "adapter_directory": (
-            None
-            if adapter_dir is None
-            else str(adapter_dir)
-        ),
+        "adapter_directory": (None if adapter_dir is None else str(adapter_dir)),
         "selected_metrics": metrics,
     }
 
@@ -878,11 +774,7 @@ def save_checkpoint(
 
     return {
         "head_state_path": str(head_path),
-        "adapter_directory": (
-            None
-            if adapter_dir is None
-            else str(adapter_dir)
-        ),
+        "adapter_directory": (None if adapter_dir is None else str(adapter_dir)),
         "checkpoint_metadata_json": str(metadata_path),
     }
 
@@ -910,9 +802,7 @@ def main() -> None:
 
     train_manifest_path = Path(args.train_manifest).resolve()
     dev_manifest_path = Path(args.dev_manifest).resolve()
-    manifest_summary_path = Path(
-        args.manifest_summary
-    ).resolve()
+    manifest_summary_path = Path(args.manifest_summary).resolve()
     hog_config_path = Path(args.hog_config).resolve()
     audit_path = Path(args.lora_audit).resolve()
     bf16_preflight_path = Path(args.bf16_preflight).resolve()
@@ -930,29 +820,21 @@ def main() -> None:
         config_path,
     ):
         if not path.is_file():
-            raise FileNotFoundError(
-                f"Required artifact missing: {path}"
-            )
+            raise FileNotFoundError(f"Required artifact missing: {path}")
 
     if not run_root.is_dir():
-        raise FileNotFoundError(
-            f"Run root does not exist: {run_root}"
-        )
+        raise FileNotFoundError(f"Run root does not exist: {run_root}")
 
     arm_dir = run_root / args.arm
 
     if arm_dir.exists():
-        raise FileExistsError(
-            f"Refusing to overwrite arm directory: {arm_dir}"
-        )
+        raise FileExistsError(f"Refusing to overwrite arm directory: {arm_dir}")
 
     if not torch.cuda.is_available():
         raise RuntimeError("CUDA is unavailable.")
 
     if not torch.cuda.is_bf16_supported():
-        raise RuntimeError(
-            "CUDA device does not report bf16 support."
-        )
+        raise RuntimeError("CUDA device does not report bf16 support.")
 
     manifest_summary = load_json(manifest_summary_path)
     hog_config = load_json(hog_config_path)
@@ -982,9 +864,7 @@ def main() -> None:
         "frozen_gradients_finite_and_present",
         False,
     ):
-        raise RuntimeError(
-            "Frozen BF16 gradient preflight was not qualified."
-        )
+        raise RuntimeError("Frozen BF16 gradient preflight was not qualified.")
 
     if not bf16_preflight.get(
         "checks",
@@ -993,54 +873,32 @@ def main() -> None:
         "lora_gradients_finite_and_present",
         False,
     ):
-        raise RuntimeError(
-            "LoRA BF16 gradient preflight was not qualified."
-        )
+        raise RuntimeError("LoRA BF16 gradient preflight was not qualified.")
 
     train_records = load_manifest(train_manifest_path)
     dev_records = load_manifest(dev_manifest_path)
 
-    train_groups = {
-        row["split_group_id"]
-        for row in train_records
-    }
+    train_groups = {row["split_group_id"] for row in train_records}
 
-    dev_groups = {
-        row["split_group_id"]
-        for row in dev_records
-    }
+    dev_groups = {row["split_group_id"] for row in dev_records}
 
     group_overlap = train_groups & dev_groups
 
     if group_overlap:
-        raise RuntimeError(
-            "Train/dev group overlap detected: "
-            f"{len(group_overlap)}"
-        )
+        raise RuntimeError(f"Train/dev group overlap detected: {len(group_overlap)}")
 
-    target_attribute_ids = [
-        int(value)
-        for value in config["target_attribute_ids"]
-    ]
+    target_attribute_ids = [int(value) for value in config["target_attribute_ids"]]
 
     target_attribute_names = {
         int(attribute_id): str(name)
-        for attribute_id, name in config[
-            "target_attribute_names"
-        ].items()
+        for attribute_id, name in config["target_attribute_names"].items()
     }
 
     target_attribute_set = set(target_attribute_ids)
 
-    train_attributes = {
-        int(row["attribute_id"])
-        for row in train_records
-    }
+    train_attributes = {int(row["attribute_id"]) for row in train_records}
 
-    dev_attributes = {
-        int(row["attribute_id"])
-        for row in dev_records
-    }
+    dev_attributes = {int(row["attribute_id"]) for row in dev_records}
 
     if train_attributes != target_attribute_set:
         raise RuntimeError("Train labels do not match task labels.")
@@ -1049,68 +907,37 @@ def main() -> None:
         raise RuntimeError("Dev labels do not match task labels.")
 
     class_index = {
-        attribute_id: index
-        for index, attribute_id in enumerate(
-            target_attribute_ids
-        )
+        attribute_id: index for index, attribute_id in enumerate(target_attribute_ids)
     }
 
     y_train = np.asarray(
-        [
-            class_index[int(row["attribute_id"])]
-            for row in train_records
-        ],
+        [class_index[int(row["attribute_id"])] for row in train_records],
         dtype=np.int64,
     )
 
     y_dev = np.asarray(
-        [
-            class_index[int(row["attribute_id"])]
-            for row in dev_records
-        ],
+        [class_index[int(row["attribute_id"])] for row in dev_records],
         dtype=np.int64,
     )
 
-    padding_fraction = float(
-        config["crop"]["padding_fraction"]
-    )
+    padding_fraction = float(config["crop"]["padding_fraction"])
 
-    if abs(
-        padding_fraction
-        - float(hog_config["crop"]["padding_fraction"])
-    ) > 1e-12:
-        raise RuntimeError(
-            "HOG and matched-head crop padding do not match."
-        )
+    if abs(padding_fraction - float(hog_config["crop"]["padding_fraction"])) > 1e-12:
+        raise RuntimeError("HOG and matched-head crop padding do not match.")
 
-    raw_targets = lora_audit[
-        "recommended_lora_scope"
-    ]["full_target_module_paths"]
+    raw_targets = lora_audit["recommended_lora_scope"]["full_target_module_paths"]
 
     lora_targets = sorted(
-        path
-        for path in raw_targets
-        if ENCODER_SELF_ATTN_PATTERN.fullmatch(path)
+        path for path in raw_targets if ENCODER_SELF_ATTN_PATTERN.fullmatch(path)
     )
 
-    excluded_targets = sorted(
-        set(raw_targets) - set(lora_targets)
-    )
+    excluded_targets = sorted(set(raw_targets) - set(lora_targets))
 
-    if len(lora_targets) != int(
-        config["lora"]["expected_target_module_count"]
-    ):
-        raise RuntimeError(
-            "LoRA target count does not match config."
-        )
+    if len(lora_targets) != int(config["lora"]["expected_target_module_count"]):
+        raise RuntimeError("LoRA target count does not match config.")
 
-    if excluded_targets != [
-        str(config["lora"]["excluded_module"])
-    ]:
-        raise RuntimeError(
-            "Unexpected LoRA excluded target list: "
-            f"{excluded_targets}"
-        )
+    if excluded_targets != [str(config["lora"]["excluded_module"])]:
+        raise RuntimeError(f"Unexpected LoRA excluded target list: {excluded_targets}")
 
     device = torch.device("cuda")
     set_seed(int(config["training"]["seed"]))
@@ -1128,9 +955,7 @@ def main() -> None:
 
     freeze_module(base_model)
 
-    set_seed(
-        int(config["head"]["initialization_seed"])
-    )
+    set_seed(int(config["head"]["initialization_seed"]))
 
     head = torch.nn.Linear(
         int(config["head"]["input_dimension"]),
@@ -1149,12 +974,8 @@ def main() -> None:
 
         optimizer = torch.optim.AdamW(
             head.parameters(),
-            lr=float(
-                config["training"]["head_learning_rate"]
-            ),
-            weight_decay=float(
-                config["training"]["weight_decay"]
-            ),
+            lr=float(config["training"]["head_learning_rate"]),
+            weight_decay=float(config["training"]["weight_decay"]),
         )
     else:
         lora_config = LoraConfig(
@@ -1194,14 +1015,12 @@ def main() -> None:
             config["lora"]["expected_adapter_parameter_count"]
         ):
             raise RuntimeError(
-                "LoRA adapter parameter count mismatch: "
-                f"{adapter_parameter_count}"
+                f"LoRA adapter parameter count mismatch: {adapter_parameter_count}"
             )
 
         if unexpected_base_trainables:
             raise RuntimeError(
-                "Unexpected base trainables: "
-                f"{unexpected_base_trainables}"
+                f"Unexpected base trainables: {unexpected_base_trainables}"
             )
 
         adapter_parameters = [
@@ -1214,25 +1033,13 @@ def main() -> None:
             [
                 {
                     "params": adapter_parameters,
-                    "lr": float(
-                        config["training"][
-                            "lora_learning_rate"
-                        ]
-                    ),
-                    "weight_decay": float(
-                        config["training"]["weight_decay"]
-                    ),
+                    "lr": float(config["training"]["lora_learning_rate"]),
+                    "weight_decay": float(config["training"]["weight_decay"]),
                 },
                 {
                     "params": list(head.parameters()),
-                    "lr": float(
-                        config["training"][
-                            "head_learning_rate"
-                        ]
-                    ),
-                    "weight_decay": float(
-                        config["training"]["weight_decay"]
-                    ),
+                    "lr": float(config["training"]["head_learning_rate"]),
+                    "weight_decay": float(config["training"]["weight_decay"]),
                 },
             ]
         )
@@ -1263,8 +1070,7 @@ def main() -> None:
     print("AUTOCAST_DTYPE: bfloat16", flush=True)
     print("GRAD_SCALER: False", flush=True)
     print(
-        "PHYSICAL_BATCH_SIZE: "
-        f"{config['training']['physical_batch_size']}",
+        f"PHYSICAL_BATCH_SIZE: {config['training']['physical_batch_size']}",
         flush=True,
     )
     print(
@@ -1273,8 +1079,7 @@ def main() -> None:
         flush=True,
     )
     print(
-        "EFFECTIVE_BATCH_SIZE: "
-        f"{config['training']['effective_batch_size']}",
+        f"EFFECTIVE_BATCH_SIZE: {config['training']['effective_batch_size']}",
         flush=True,
     )
     print(f"EPOCHS: {config['training']['epochs']}", flush=True)
@@ -1288,12 +1093,8 @@ def main() -> None:
     )
 
     epochs = int(config["training"]["epochs"])
-    batch_size = int(
-        config["training"]["physical_batch_size"]
-    )
-    accumulation_steps = int(
-        config["training"]["gradient_accumulation_steps"]
-    )
+    batch_size = int(config["training"]["physical_batch_size"])
+    accumulation_steps = int(config["training"]["gradient_accumulation_steps"])
 
     epoch_rows = []
     best_metrics = None
@@ -1323,9 +1124,7 @@ def main() -> None:
             accumulation_steps=accumulation_steps,
             epoch=epoch,
             shuffle_seed=int(config["training"]["seed"]),
-            max_grad_norm=float(
-                config["training"]["max_grad_norm"]
-            ),
+            max_grad_norm=float(config["training"]["max_grad_norm"]),
         )
 
         (
@@ -1439,8 +1238,7 @@ def main() -> None:
         "confidence",
         "correct",
     ] + [
-        f"probability_attribute_{attribute_id}"
-        for attribute_id in target_attribute_ids
+        f"probability_attribute_{attribute_id}" for attribute_id in target_attribute_ids
     ]
 
     write_csv(
@@ -1454,7 +1252,8 @@ def main() -> None:
         fieldnames=[
             "true_attribute_id",
             "true_attribute_name",
-        ] + [
+        ]
+        + [
             f"predicted_attribute_{attribute_id}"
             for attribute_id in target_attribute_ids
         ],
@@ -1465,46 +1264,30 @@ def main() -> None:
         ece_path,
         {
             "top_label_ece": best_metrics["top_label_ece"],
-            "bin_count": int(
-                config["evaluation"]["ece_bins"]
-            ),
+            "bin_count": int(config["evaluation"]["ece_bins"]),
             "bins": best_ece,
         },
     )
 
-    expected_head_parameters = (
-        int(config["head"]["input_dimension"])
-        * int(config["head"]["output_classes"])
-        + int(config["head"]["output_classes"])
-    )
+    expected_head_parameters = int(config["head"]["input_dimension"]) * int(
+        config["head"]["output_classes"]
+    ) + int(config["head"]["output_classes"])
 
     checks = {
-        "source_manifest_pass": (
-            manifest_summary.get("status") == "PASS"
-        ),
+        "source_manifest_pass": (manifest_summary.get("status") == "PASS"),
         "group_disjoint_pass": len(group_overlap) == 0,
-        "bf16_supported": bool(
-            torch.cuda.is_bf16_supported()
-        ),
-        "bf16_preflight_pass": (
-            bf16_preflight.get("status") == "PASS"
-        ),
+        "bf16_supported": bool(torch.cuda.is_bf16_supported()),
+        "bf16_preflight_pass": (bf16_preflight.get("status") == "PASS"),
         "best_epoch_selected": best_epoch is not None,
         "all_epoch_optimizer_steps_positive": all(
-            row["optimizer_steps"] > 0
-            for row in epoch_rows
+            row["optimizer_steps"] > 0 for row in epoch_rows
         ),
-        "finite_selected_macro_f1": bool(
-            np.isfinite(best_metrics["macro_f1"])
-        ),
+        "finite_selected_macro_f1": bool(np.isfinite(best_metrics["macro_f1"])),
         "finite_selected_nll": bool(
-            np.isfinite(
-                best_metrics["negative_log_likelihood"]
-            )
+            np.isfinite(best_metrics["negative_log_likelihood"])
         ),
         "head_parameter_count_expected": (
-            count_parameters(head)
-            == expected_head_parameters
+            count_parameters(head) == expected_head_parameters
         ),
         "best_prediction_count_matches_dev": (
             len(best_predictions) == len(dev_records)
@@ -1512,43 +1295,25 @@ def main() -> None:
     }
 
     if args.arm == "frozen_head":
-        checks["frozen_adapter_parameter_count_zero"] = (
-            adapter_parameter_count == 0
-        )
+        checks["frozen_adapter_parameter_count_zero"] = adapter_parameter_count == 0
     else:
-        checks["lora_target_count_matches"] = (
-            len(lora_targets)
-            == int(
-                config["lora"][
-                    "expected_target_module_count"
-                ]
-            )
+        checks["lora_target_count_matches"] = len(lora_targets) == int(
+            config["lora"]["expected_target_module_count"]
         )
 
-        checks["lora_adapter_parameter_count_matches"] = (
-            adapter_parameter_count
-            == int(
-                config["lora"][
-                    "expected_adapter_parameter_count"
-                ]
-            )
+        checks["lora_adapter_parameter_count_matches"] = adapter_parameter_count == int(
+            config["lora"]["expected_adapter_parameter_count"]
         )
 
-        checks["no_unexpected_base_trainables"] = (
-            len(unexpected_base_trainables) == 0
-        )
+        checks["no_unexpected_base_trainables"] = len(unexpected_base_trainables) == 0
 
     status = "PASS" if all(checks.values()) else "REVIEW"
 
     summary = {
         "status": status,
-        "schema_version": (
-            "siglip2_matched_head_arm_v2_bf16"
-        ),
+        "schema_version": ("siglip2_matched_head_arm_v2_bf16"),
         "arm_name": args.arm,
-        "created_utc": datetime.now(
-            timezone.utc
-        ).isoformat(),
+        "created_utc": datetime.now(UTC).isoformat(),
         "selection_scope": "train_only_development",
         "selected_epoch": int(best_epoch),
         "selected_metrics": best_metrics,
@@ -1556,7 +1321,7 @@ def main() -> None:
         "precision_policy": {
             "autocast_dtype": "bfloat16",
             "grad_scaler_used": False,
-            "loss_dtype": "float32"
+            "loss_dtype": "float32",
         },
         "source_artifacts": {
             "train_manifest": str(train_manifest_path),
@@ -1566,12 +1331,8 @@ def main() -> None:
             "lora_audit": str(audit_path),
             "bf16_preflight": str(bf16_preflight_path),
             "config": str(config_path),
-            "train_manifest_sha256": sha256_file(
-                train_manifest_path
-            ),
-            "dev_manifest_sha256": sha256_file(
-                dev_manifest_path
-            ),
+            "train_manifest_sha256": sha256_file(train_manifest_path),
+            "dev_manifest_sha256": sha256_file(dev_manifest_path),
             "config_sha256": sha256_file(config_path),
         },
         "environment": {
@@ -1585,8 +1346,7 @@ def main() -> None:
             "device": str(device),
             "gpu_name": torch.cuda.get_device_name(0),
             "gpu_peak_memory_allocated_mib": round(
-                torch.cuda.max_memory_allocated(device)
-                / (1024 ** 2),
+                torch.cuda.max_memory_allocated(device) / (1024**2),
                 2,
             ),
         },
@@ -1602,29 +1362,20 @@ def main() -> None:
         "parameter_counts": {
             "classification_head": count_parameters(head),
             "lora_adapter": adapter_parameter_count,
-            "total_trainable": (
-                count_parameters(head)
-                + adapter_parameter_count
-            ),
+            "total_trainable": (count_parameters(head) + adapter_parameter_count),
         },
         "lora_scope": {
             "selected_target_modules": (
-                []
-                if args.arm == "frozen_head"
-                else lora_targets
+                [] if args.arm == "frozen_head" else lora_targets
             ),
-            "unexpected_base_trainables": (
-                unexpected_base_trainables
-            ),
+            "unexpected_base_trainables": (unexpected_base_trainables),
         },
         "qualification_checks": checks,
         "artifacts": {
             "epoch_metrics_csv": str(epoch_metrics_path),
             "best_per_class_metrics_csv": str(per_class_path),
             "best_dev_predictions_csv": str(predictions_path),
-            "best_dev_confusion_matrix_csv": str(
-                confusion_path
-            ),
+            "best_dev_confusion_matrix_csv": str(confusion_path),
             "best_dev_ece_bins_json": str(ece_path),
             **best_checkpoint,
         },
@@ -1642,24 +1393,11 @@ def main() -> None:
     print(f"STATUS: {status}")
     print(f"ARM: {args.arm}")
     print(f"SELECTED_EPOCH: {best_epoch}")
-    print(
-        f"MACRO_F1: {best_metrics['macro_f1']:.6f}"
-    )
-    print(
-        "BALANCED_ACCURACY: "
-        f"{best_metrics['balanced_accuracy']:.6f}"
-    )
-    print(
-        f"TOP_LABEL_ECE: {best_metrics['top_label_ece']:.6f}"
-    )
-    print(
-        "NEGATIVE_LOG_LIKELIHOOD: "
-        f"{best_metrics['negative_log_likelihood']:.6f}"
-    )
-    print(
-        "TOP_2_ACCURACY: "
-        f"{best_metrics['top_2_accuracy']:.6f}"
-    )
+    print(f"MACRO_F1: {best_metrics['macro_f1']:.6f}")
+    print(f"BALANCED_ACCURACY: {best_metrics['balanced_accuracy']:.6f}")
+    print(f"TOP_LABEL_ECE: {best_metrics['top_label_ece']:.6f}")
+    print(f"NEGATIVE_LOG_LIKELIHOOD: {best_metrics['negative_log_likelihood']:.6f}")
+    print(f"TOP_2_ACCURACY: {best_metrics['top_2_accuracy']:.6f}")
     print(
         "GPU_PEAK_MEMORY_ALLOCATED_MIB: "
         f"{summary['environment']['gpu_peak_memory_allocated_mib']:.2f}"

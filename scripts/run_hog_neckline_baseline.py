@@ -9,14 +9,14 @@ import sys
 import time
 import warnings
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import joblib
 import numpy as np
 import PIL
-import sklearn
 import skimage
+import sklearn
 from PIL import Image
 from skimage.feature import hog
 from sklearn.exceptions import ConvergenceWarning
@@ -71,9 +71,7 @@ def load_manifest(path: Path) -> list[dict[str, str]]:
     missing_columns = sorted(required_columns - set(rows[0]))
 
     if missing_columns:
-        raise ValueError(
-            f"Manifest is missing required columns: {missing_columns}"
-        )
+        raise ValueError(f"Manifest is missing required columns: {missing_columns}")
 
     return rows
 
@@ -86,8 +84,7 @@ def crop_and_resize(
 
     if not image_path.is_file():
         raise FileNotFoundError(
-            f"Image missing for annotation_id={record['annotation_id']}: "
-            f"{image_path}"
+            f"Image missing for annotation_id={record['annotation_id']}: {image_path}"
         )
 
     try:
@@ -149,10 +146,13 @@ def extract_hog_vector(
     config: dict,
 ) -> np.ndarray:
     crop = crop_and_resize(record, config["crop"])
-    gray = np.asarray(
-        crop.convert("L"),
-        dtype=np.float32,
-    ) / 255.0
+    gray = (
+        np.asarray(
+            crop.convert("L"),
+            dtype=np.float32,
+        )
+        / 255.0
+    )
 
     hog_config = config["hog"]
 
@@ -199,10 +199,7 @@ def build_feature_matrix(
 
         features[index] = vector
 
-        if (
-            index % progress_interval == 0
-            or index == len(records) - 1
-        ):
+        if index % progress_interval == 0 or index == len(records) - 1:
             print(
                 f"feature_progress split={split_name} "
                 f"completed={index + 1}/{len(records)}"
@@ -306,8 +303,7 @@ def main() -> None:
 
     if manifest_summary.get("status") != "PASS":
         raise RuntimeError(
-            "Source manifest is not qualified: "
-            f"{manifest_summary.get('status')!r}"
+            f"Source manifest is not qualified: {manifest_summary.get('status')!r}"
         )
 
     checks = manifest_summary.get("checks", {})
@@ -318,15 +314,9 @@ def main() -> None:
     train_records = load_manifest(train_manifest_path)
     dev_records = load_manifest(dev_manifest_path)
 
-    train_groups = {
-        record["split_group_id"]
-        for record in train_records
-    }
+    train_groups = {record["split_group_id"] for record in train_records}
 
-    dev_groups = {
-        record["split_group_id"]
-        for record in dev_records
-    }
+    dev_groups = {record["split_group_id"] for record in dev_records}
 
     group_overlap = train_groups & dev_groups
 
@@ -335,25 +325,16 @@ def main() -> None:
             f"Group leakage detected: {len(group_overlap)} overlapping image groups."
         )
 
-    target_attribute_ids = [
-        int(value)
-        for value in config["target_attribute_ids"]
-    ]
+    target_attribute_ids = [int(value) for value in config["target_attribute_ids"]]
 
     target_attribute_set = set(target_attribute_ids)
 
     if len(target_attribute_set) != len(target_attribute_ids):
         raise ValueError("Target attribute IDs are not unique.")
 
-    train_attribute_ids = {
-        int(record["attribute_id"])
-        for record in train_records
-    }
+    train_attribute_ids = {int(record["attribute_id"]) for record in train_records}
 
-    dev_attribute_ids = {
-        int(record["attribute_id"])
-        for record in dev_records
-    }
+    dev_attribute_ids = {int(record["attribute_id"]) for record in dev_records}
 
     if train_attribute_ids != target_attribute_set:
         raise ValueError(
@@ -373,35 +354,24 @@ def main() -> None:
     }
 
     class_index = {
-        attribute_id: index
-        for index, attribute_id in enumerate(target_attribute_ids)
+        attribute_id: index for index, attribute_id in enumerate(target_attribute_ids)
     }
 
     y_train = np.asarray(
-        [
-            class_index[int(record["attribute_id"])]
-            for record in train_records
-        ],
+        [class_index[int(record["attribute_id"])] for record in train_records],
         dtype=np.int64,
     )
 
     y_dev = np.asarray(
-        [
-            class_index[int(record["attribute_id"])]
-            for record in dev_records
-        ],
+        [class_index[int(record["attribute_id"])] for record in dev_records],
         dtype=np.int64,
     )
 
     train_class_counts = Counter(
-        int(record["attribute_id"])
-        for record in train_records
+        int(record["attribute_id"]) for record in train_records
     )
 
-    dev_class_counts = Counter(
-        int(record["attribute_id"])
-        for record in dev_records
-    )
+    dev_class_counts = Counter(int(record["attribute_id"]) for record in dev_records)
 
     print("===== HOG NECKLINE BASELINE PRE-FLIGHT =====")
     print(f"TRAIN_SAMPLES: {len(train_records)}")
@@ -474,24 +444,18 @@ def main() -> None:
         len(dev_records),
         len(target_attribute_ids),
     ):
-        raise RuntimeError(
-            "Unexpected probability shape: "
-            f"{probabilities.shape}"
-        )
+        raise RuntimeError(f"Unexpected probability shape: {probabilities.shape}")
 
     if not np.isfinite(probabilities).all():
         raise RuntimeError("Probability matrix contains non-finite values.")
 
     predicted_indices = probabilities.argmax(axis=1)
     predicted_attribute_ids = [
-        target_attribute_ids[int(index)]
-        for index in predicted_indices
+        target_attribute_ids[int(index)] for index in predicted_indices
     ]
 
     accuracy = float(accuracy_score(y_dev, predicted_indices))
-    balanced_accuracy = float(
-        balanced_accuracy_score(y_dev, predicted_indices)
-    )
+    balanced_accuracy = float(balanced_accuracy_score(y_dev, predicted_indices))
     macro_f1 = float(
         f1_score(
             y_dev,
@@ -590,25 +554,18 @@ def main() -> None:
             "image_path": record["image_path"],
             "true_attribute_id": int(record["attribute_id"]),
             "true_attribute_name": record["attribute_name"],
-            "predicted_attribute_id": int(
-                predicted_attribute_ids[row_index]
-            ),
+            "predicted_attribute_id": int(predicted_attribute_ids[row_index]),
             "predicted_attribute_name": attribute_names[
                 predicted_attribute_ids[row_index]
             ],
             "confidence": float(probabilities[row_index].max()),
             "correct": bool(
-                int(predicted_attribute_ids[row_index])
-                == int(record["attribute_id"])
+                int(predicted_attribute_ids[row_index]) == int(record["attribute_id"])
             ),
         }
 
-        for class_index_value, attribute_id in enumerate(
-            target_attribute_ids
-        ):
-            prediction_row[
-                f"probability_attribute_{attribute_id}"
-            ] = float(
+        for class_index_value, attribute_id in enumerate(target_attribute_ids):
+            prediction_row[f"probability_attribute_{attribute_id}"] = float(
                 probabilities[row_index, class_index_value]
             )
 
@@ -656,8 +613,7 @@ def main() -> None:
         "confidence",
         "correct",
     ] + [
-        f"probability_attribute_{attribute_id}"
-        for attribute_id in target_attribute_ids
+        f"probability_attribute_{attribute_id}" for attribute_id in target_attribute_ids
     ]
 
     write_csv(
@@ -668,20 +624,16 @@ def main() -> None:
 
     confusion_rows = []
 
-    for true_index, true_attribute_id in enumerate(
-        target_attribute_ids
-    ):
+    for true_index, true_attribute_id in enumerate(target_attribute_ids):
         row = {
             "true_attribute_id": true_attribute_id,
             "true_attribute_name": attribute_names[true_attribute_id],
         }
 
-        for predicted_index, predicted_attribute_id in enumerate(
-            target_attribute_ids
-        ):
-            row[
-                f"predicted_attribute_{predicted_attribute_id}"
-            ] = int(confusion[true_index, predicted_index])
+        for predicted_index, predicted_attribute_id in enumerate(target_attribute_ids):
+            row[f"predicted_attribute_{predicted_attribute_id}"] = int(
+                confusion[true_index, predicted_index]
+            )
 
         confusion_rows.append(row)
 
@@ -690,7 +642,8 @@ def main() -> None:
         [
             "true_attribute_id",
             "true_attribute_name",
-        ] + [
+        ]
+        + [
             f"predicted_attribute_{attribute_id}"
             for attribute_id in target_attribute_ids
         ],
@@ -729,38 +682,22 @@ def main() -> None:
     classifier = pipeline.named_steps["classifier"]
 
     qualification_checks = {
-        "source_manifest_pass": (
-            manifest_summary.get("status") == "PASS"
-        ),
-        "source_group_disjoint_pass": bool(
-            checks.get("group_disjoint_pass", False)
-        ),
+        "source_manifest_pass": (manifest_summary.get("status") == "PASS"),
+        "source_group_disjoint_pass": bool(checks.get("group_disjoint_pass", False)),
         "rechecked_group_disjoint_pass": len(group_overlap) == 0,
-        "all_target_classes_in_train": (
-            train_attribute_ids == target_attribute_set
-        ),
-        "all_target_classes_in_dev": (
-            dev_attribute_ids == target_attribute_set
-        ),
-        "finite_probability_matrix": bool(
-            np.isfinite(probabilities).all()
-        ),
-        "prediction_count_matches_dev": (
-            len(prediction_rows) == len(dev_records)
-        ),
+        "all_target_classes_in_train": (train_attribute_ids == target_attribute_set),
+        "all_target_classes_in_dev": (dev_attribute_ids == target_attribute_set),
+        "finite_probability_matrix": bool(np.isfinite(probabilities).all()),
+        "prediction_count_matches_dev": (len(prediction_rows) == len(dev_records)),
         "no_convergence_warning": convergence_warning_count == 0,
     }
 
-    status = (
-        "PASS"
-        if all(qualification_checks.values())
-        else "REVIEW"
-    )
+    status = "PASS" if all(qualification_checks.values()) else "REVIEW"
 
     summary = {
         "status": status,
         "schema_version": "hog_neckline_baseline_run_v1",
-        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "created_utc": datetime.now(UTC).isoformat(),
         "run_role": config["run_role"],
         "task_name": config["task_name"],
         "selection_scope": "train_only_development",
@@ -770,9 +707,7 @@ def main() -> None:
             "manifest_summary": str(manifest_summary_path),
             "train_manifest_sha256": sha256_file(train_manifest_path),
             "dev_manifest_sha256": sha256_file(dev_manifest_path),
-            "manifest_summary_sha256": sha256_file(
-                manifest_summary_path
-            ),
+            "manifest_summary_sha256": sha256_file(manifest_summary_path),
             "config_sha256": sha256_file(config_path),
         },
         "environment": {
@@ -791,15 +726,11 @@ def main() -> None:
             "group_overlap_count": len(group_overlap),
             "target_attribute_ids": target_attribute_ids,
             "train_class_counts": {
-                str(attribute_id): int(
-                    train_class_counts[attribute_id]
-                )
+                str(attribute_id): int(train_class_counts[attribute_id])
                 for attribute_id in target_attribute_ids
             },
             "dev_class_counts": {
-                str(attribute_id): int(
-                    dev_class_counts[attribute_id]
-                )
+                str(attribute_id): int(dev_class_counts[attribute_id])
                 for attribute_id in target_attribute_ids
             },
         },
@@ -810,9 +741,7 @@ def main() -> None:
         },
         "classifier_specification": {
             **config["classifier"],
-            "observed_max_iterations": int(
-                np.max(classifier.n_iter_)
-            ),
+            "observed_max_iterations": int(np.max(classifier.n_iter_)),
         },
         "metrics": {
             "accuracy": accuracy,
@@ -874,12 +803,12 @@ def main() -> None:
 
     for row in per_class_rows:
         print(
-            f'{row["attribute_id"]:>3}  '
-            f'{row["support"]:>11}  '
-            f'{row["precision"]:>9.4f}  '
-            f'{row["recall"]:>6.4f}  '
-            f'{row["f1"]:>6.4f}  '
-            f'{row["attribute_name"]}'
+            f"{row['attribute_id']:>3}  "
+            f"{row['support']:>11}  "
+            f"{row['precision']:>9.4f}  "
+            f"{row['recall']:>6.4f}  "
+            f"{row['f1']:>6.4f}  "
+            f"{row['attribute_name']}"
         )
 
     print("")

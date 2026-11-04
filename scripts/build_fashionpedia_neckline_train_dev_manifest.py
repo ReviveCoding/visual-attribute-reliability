@@ -6,7 +6,7 @@ import hashlib
 import json
 import random
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -57,16 +57,12 @@ def objective(
     target_total: float,
 ) -> float:
     class_loss = sum(
-        (
-            (float(counts[attribute_id]) - target_count)
-            / max(target_count, 1.0)
-        ) ** 2
+        ((float(counts[attribute_id]) - target_count) / max(target_count, 1.0)) ** 2
         for attribute_id, target_count in target_counts.items()
     )
 
     total_loss = (
-        (float(sum(counts.values())) - target_total)
-        / max(target_total, 1.0)
+        (float(sum(counts.values())) - target_total) / max(target_total, 1.0)
     ) ** 2
 
     overshoot_loss = sum(
@@ -115,14 +111,10 @@ def main() -> None:
     target_category_name = str(config["target_category"]["expected_name"])
 
     target_attribute_rows = config["target_attributes"]
-    target_attribute_ids = {
-        int(row["id"])
-        for row in target_attribute_rows
-    }
+    target_attribute_ids = {int(row["id"]) for row in target_attribute_rows}
 
     target_attribute_names = {
-        int(row["id"]): str(row["name"])
-        for row in target_attribute_rows
+        int(row["id"]): str(row["name"]) for row in target_attribute_rows
     }
 
     development_policy = config["development_split_policy"]
@@ -131,13 +123,10 @@ def main() -> None:
     seed = int(development_policy["seed"])
 
     if abs((train_fraction + dev_fraction) - 1.0) > 1e-9:
-        raise ValueError(
-            "Train and development fractions must sum to 1.0."
-        )
+        raise ValueError("Train and development fractions must sum to 1.0.")
 
     category_names = {
-        int(row["id"]): str(row["name"])
-        for row in payload.get("categories", [])
+        int(row["id"]): str(row["name"]) for row in payload.get("categories", [])
     }
 
     observed_category_name = category_names.get(target_category_id)
@@ -150,8 +139,7 @@ def main() -> None:
         )
 
     image_rows = {
-        int(row["id"]): str(row["file_name"])
-        for row in payload.get("images", [])
+        int(row["id"]): str(row["file_name"]) for row in payload.get("images", [])
     }
 
     records_by_group: dict[int, list[dict]] = defaultdict(list)
@@ -230,16 +218,10 @@ def main() -> None:
     rng = random.Random(seed)
 
     group_ids = list(records_by_group)
-    tie_break = {
-        group_id: rng.random()
-        for group_id in group_ids
-    }
+    tie_break = {group_id: rng.random() for group_id in group_ids}
 
     group_class_counts: dict[int, Counter[int]] = {
-        group_id: Counter(
-            record["attribute_id"]
-            for record in records
-        )
+        group_id: Counter(record["attribute_id"] for record in records)
         for group_id, records in records_by_group.items()
     }
 
@@ -257,10 +239,7 @@ def main() -> None:
         for attribute_id in sorted(target_attribute_ids)
     }
 
-    target_dev_total = (
-        float(sum(class_total_counts.values()))
-        * dev_fraction
-    )
+    target_dev_total = float(sum(class_total_counts.values())) * dev_fraction
 
     dev_group_ids: set[int] = set()
     dev_counts: Counter[int] = Counter()
@@ -288,9 +267,7 @@ def main() -> None:
     train_group_ids = set(group_ids) - dev_group_ids
 
     if not train_group_ids or not dev_group_ids:
-        raise RuntimeError(
-            "Degenerate split produced an empty train or dev partition."
-        )
+        raise RuntimeError("Degenerate split produced an empty train or dev partition.")
 
     train_records = [
         record
@@ -304,15 +281,9 @@ def main() -> None:
         for record in records_by_group[group_id]
     ]
 
-    train_counts = Counter(
-        int(record["attribute_id"])
-        for record in train_records
-    )
+    train_counts = Counter(int(record["attribute_id"]) for record in train_records)
 
-    dev_counts = Counter(
-        int(record["attribute_id"])
-        for record in dev_records
-    )
+    dev_counts = Counter(int(record["attribute_id"]) for record in dev_records)
 
     overlap = train_group_ids & dev_group_ids
 
@@ -339,40 +310,22 @@ def main() -> None:
             }
         )
 
-    overall_dev_fraction = (
-        float(len(dev_records))
-        / float(len(train_records) + len(dev_records))
+    overall_dev_fraction = float(len(dev_records)) / float(
+        len(train_records) + len(dev_records)
     )
 
-    per_class_minimum_train = min(
-        row["train_count"]
-        for row in class_rows
-    )
+    per_class_minimum_train = min(row["train_count"] for row in class_rows)
 
-    per_class_minimum_dev = min(
-        row["dev_count"]
-        for row in class_rows
-    )
+    per_class_minimum_dev = min(row["dev_count"] for row in class_rows)
 
     group_disjoint_pass = len(overlap) == 0
-    all_classes_in_train_pass = all(
-        row["train_count"] > 0
-        for row in class_rows
-    )
+    all_classes_in_train_pass = all(row["train_count"] > 0 for row in class_rows)
 
-    all_classes_in_dev_pass = all(
-        row["dev_count"] > 0
-        for row in class_rows
-    )
+    all_classes_in_dev_pass = all(row["dev_count"] > 0 for row in class_rows)
 
-    dev_fraction_pass = (
-        abs(overall_dev_fraction - dev_fraction) <= 0.035
-    )
+    dev_fraction_pass = abs(overall_dev_fraction - dev_fraction) <= 0.035
 
-    class_fraction_pass = all(
-        0.12 <= row["dev_fraction"] <= 0.28
-        for row in class_rows
-    )
+    class_fraction_pass = all(0.12 <= row["dev_fraction"] <= 0.28 for row in class_rows)
 
     image_resolution_pass = skipped_missing_image == 0
 
@@ -424,7 +377,7 @@ def main() -> None:
     summary = {
         "status": status,
         "schema_version": "fashionpedia_neckline_attribute_manifest_v1",
-        "created_utc": datetime.now(timezone.utc).isoformat(),
+        "created_utc": datetime.now(UTC).isoformat(),
         "selection_scope": "train_only",
         "annotation_path": str(annotation_path),
         "annotation_sha256": sha256_file(annotation_path),
@@ -502,12 +455,12 @@ def main() -> None:
 
     for row in class_rows:
         print(
-            f'{row["attribute_id"]:>3}  '
-            f'{row["total_count"]:>5}  '
-            f'{row["train_count"]:>5}  '
-            f'{row["dev_count"]:>4}  '
-            f'{row["dev_fraction"]:>12.3f}  '
-            f'{row["attribute_name"]}'
+            f"{row['attribute_id']:>3}  "
+            f"{row['total_count']:>5}  "
+            f"{row['train_count']:>5}  "
+            f"{row['dev_count']:>4}  "
+            f"{row['dev_fraction']:>12.3f}  "
+            f"{row['attribute_name']}"
         )
 
     print("\n===== MANIFEST CHECKS =====")
