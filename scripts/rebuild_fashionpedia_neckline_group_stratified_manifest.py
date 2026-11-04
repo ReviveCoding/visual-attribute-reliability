@@ -6,7 +6,7 @@ import hashlib
 import json
 import random
 from collections import Counter, defaultdict
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 

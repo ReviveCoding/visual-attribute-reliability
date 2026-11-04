@@ -9,7 +9,7 @@ import sys
 import time
 import warnings
 from collections import Counter
-from datetime import UTC, datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import joblib
